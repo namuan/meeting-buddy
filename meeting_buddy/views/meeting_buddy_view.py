@@ -38,6 +38,7 @@ class MeetingBuddyView(QMainWindow):
         self.logger = logging.getLogger(__name__)
 
         # Callback functions (to be set by presenter)
+        self.on_input_device_changed: Optional[Callable[[int], None]] = None
         self.on_output_device_changed: Optional[Callable[[int], None]] = None
         self.on_start_recording: Optional[Callable[[], None]] = None
         self.on_stop_recording: Optional[Callable[[], None]] = None
@@ -45,6 +46,7 @@ class MeetingBuddyView(QMainWindow):
         self.on_recording_selected: Optional[Callable[[int], None]] = None
 
         # UI components
+        self.input_device_combo: Optional[QComboBox] = None
         self.output_device_combo: Optional[QComboBox] = None
         self.progress_slider: Optional[QSlider] = None
         self.start_button: Optional[QPushButton] = None
@@ -83,12 +85,28 @@ class MeetingBuddyView(QMainWindow):
         self.logger.debug("UI setup completed")
 
     def _create_device_selection_section(self, main_layout: QVBoxLayout) -> None:
-        """Create the audio device selection section."""
+        """Create the device selection section."""
+        # Input device selection (for recording)
+        input_layout = QHBoxLayout()
+        input_layout.setSpacing(10)
+
+        select_input_label = QLabel("Select Input Device (Recording)")
+        select_input_label.setFont(QFont("System", 13))
+
+        self.input_device_combo = QComboBox()
+        self.input_device_combo.setFont(QFont("System", 13))
+        self.input_device_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.input_device_combo.currentIndexChanged.connect(self._on_input_device_changed)
+
+        input_layout.addWidget(select_input_label)
+        input_layout.addWidget(self.input_device_combo)
+        main_layout.addLayout(input_layout)
+
         # Output device selection
         output_layout = QHBoxLayout()
         output_layout.setSpacing(10)
 
-        select_output_label = QLabel("Select Output Device")
+        select_output_label = QLabel("Select Output Device (Playback)")
         select_output_label.setFont(QFont("System", 13))
 
         self.output_device_combo = QComboBox()
@@ -224,6 +242,11 @@ class MeetingBuddyView(QMainWindow):
         """)
 
     # Callback wrapper methods
+    def _on_input_device_changed(self, index: int) -> None:
+        """Handle input device selection change."""
+        if self.on_input_device_changed:
+            self.on_input_device_changed(index)
+
     def _on_output_device_changed(self, index: int) -> None:
         """Handle output device selection change."""
         if self.on_output_device_changed:
@@ -251,6 +274,27 @@ class MeetingBuddyView(QMainWindow):
             self.on_recording_selected(index)
 
     # Public methods for updating UI from presenter
+    def populate_input_devices(self, devices: list[str]) -> None:
+        """Populate the input device combo box.
+
+        Args:
+            devices: List of device display names
+        """
+        if self.input_device_combo is None:
+            self.logger.error("input_device_combo is None!")
+            return
+
+        self.input_device_combo.clear()
+        if not devices:
+            self.input_device_combo.addItem("No input devices found")
+            self.logger.warning("No input devices to populate")
+            return
+
+        for device in devices:
+            self.input_device_combo.addItem(device)
+
+        self.logger.debug(f"Populated {len(devices)} input devices")
+
     def populate_output_devices(self, devices: list[str]) -> None:
         """Populate the output device combo box.
 
@@ -296,6 +340,10 @@ class MeetingBuddyView(QMainWindow):
         """
         if self.transcription_text is not None:
             self.transcription_text.setPlainText(text)
+
+            # Auto-scroll to bottom for live updates
+            self._scroll_transcription_to_bottom()
+
             self.logger.debug(f"Set transcription text: {len(text)} characters")
 
     def append_transcription_text(self, text: str) -> None:
@@ -308,6 +356,10 @@ class MeetingBuddyView(QMainWindow):
             current_text = self.transcription_text.toPlainText()
             new_text = current_text + " " + text if current_text else text
             self.transcription_text.setPlainText(new_text)
+
+            # Auto-scroll to bottom for live updates
+            self._scroll_transcription_to_bottom()
+
             self.logger.debug(f"Appended transcription text: {len(text)} characters")
 
     def clear_transcription_text(self) -> None:
@@ -371,3 +423,94 @@ class MeetingBuddyView(QMainWindow):
         """
         # For now, just log the info. Could be extended with QMessageBox
         self.logger.info(f"{title}: {message}")
+
+    def _scroll_transcription_to_bottom(self) -> None:
+        """Scroll the transcription text area to the bottom for live updates."""
+        if self.transcription_text is not None:
+            # Move cursor to end and ensure it's visible
+            cursor = self.transcription_text.textCursor()
+            cursor.movePosition(cursor.MoveOperation.End)
+            self.transcription_text.setTextCursor(cursor)
+            self.transcription_text.ensureCursorVisible()
+
+    def update_transcription_live(self, new_text: str, is_final: bool = False) -> None:
+        """Update transcription with live text, handling partial and final results.
+
+        Args:
+            new_text: New transcription text to add
+            is_final: Whether this is a final transcription result or partial
+        """
+        if self.transcription_text is not None:
+            if is_final:
+                # For final results, append with proper spacing
+                self.append_transcription_text(new_text)
+            else:
+                # For partial results, show in a different style or just update
+                current_text = self.transcription_text.toPlainText()
+                # Add partial text with visual indicator
+                display_text = current_text + " [" + new_text + "...]"
+                self.transcription_text.setPlainText(display_text)
+                self._scroll_transcription_to_bottom()
+
+            self.logger.debug(f"Live transcription update: {len(new_text)} chars, final={is_final}")
+
+    def set_transcription_status(self, status: str) -> None:
+        """Set transcription status message.
+
+        Args:
+            status: Status message to display
+        """
+        # Could be used to show status like "Listening...", "Processing...", etc.
+        # For now, just update the placeholder text
+        if self.transcription_text is not None and not self.transcription_text.toPlainText().strip():
+            self.transcription_text.setPlaceholderText(status)
+
+        self.logger.debug(f"Transcription status: {status}")
+
+    def highlight_recent_transcription(self, text: str) -> None:
+        """Highlight recently added transcription text.
+
+        Args:
+            text: Text to highlight
+        """
+        if self.transcription_text is not None:
+            # Get current cursor position
+            cursor = self.transcription_text.textCursor()
+
+            # Find the recently added text and highlight it briefly
+            full_text = self.transcription_text.toPlainText()
+            if text in full_text:
+                start_pos = full_text.rfind(text)
+                if start_pos >= 0:
+                    # Select the new text
+                    cursor.setPosition(start_pos)
+                    cursor.setPosition(start_pos + len(text), cursor.MoveMode.KeepAnchor)
+                    self.transcription_text.setTextCursor(cursor)
+
+                    # Could add temporary highlighting here if needed
+                    # For now, just ensure it's visible
+                    self.transcription_text.ensureCursorVisible()
+
+        self.logger.debug(f"Highlighted recent transcription: {len(text)} characters")
+
+    def get_transcription_word_count(self) -> int:
+        """Get the current word count of transcription text.
+
+        Returns:
+            Number of words in transcription
+        """
+        if self.transcription_text is not None:
+            text = self.transcription_text.toPlainText().strip()
+            if text:
+                return len(text.split())
+        return 0
+
+    def get_transcription_character_count(self) -> int:
+        """Get the current character count of transcription text.
+
+        Returns:
+            Number of characters in transcription
+        """
+        if self.transcription_text is not None:
+            return len(self.transcription_text.toPlainText())
+        return 0

@@ -12,6 +12,8 @@ check: ## Run code quality tools.
 	@uv lock --locked
 	@echo "🚀 Linting code: Running pre-commit"
 	@uv run pre-commit run -a
+	@echo "🚀 Mob next to commit any changes"
+	@mob next
 
 .PHONY: run
 run: ## Run the application

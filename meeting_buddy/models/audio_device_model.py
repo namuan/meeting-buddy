@@ -39,7 +39,9 @@ class AudioDeviceModel:
         self.logger = logging.getLogger(__name__)
         self._pyaudio_instance: Optional[pyaudio.PyAudio] = None
         self._output_devices: list[AudioDeviceInfo] = []
+        self._input_devices: list[AudioDeviceInfo] = []
         self._selected_output_device: Optional[AudioDeviceInfo] = None
+        self._selected_input_device: Optional[AudioDeviceInfo] = None
 
         self._initialize_pyaudio()
         self.refresh_devices()
@@ -61,6 +63,7 @@ class AudioDeviceModel:
 
         self.logger.debug("Refreshing audio devices")
         self._output_devices.clear()
+        self._input_devices.clear()
 
         device_count = self._pyaudio_instance.get_device_count()
         self.logger.debug(f"Found {device_count} total audio devices")
@@ -73,19 +76,26 @@ class AudioDeviceModel:
                 self.logger.warning(f"Error getting device info for index {i}: {e}")
                 continue
 
-        self.logger.info(f"Device refresh complete: {len(self._output_devices)} output devices")
+        self.logger.info(
+            f"Device refresh complete: {len(self._output_devices)} output devices, {len(self._input_devices)} input devices"
+        )
 
-        # Auto-select first available output device if none selected
+        # Auto-select first available devices if none selected
         if not self._selected_output_device and self._output_devices:
             self.select_output_device(0)
+        if not self._selected_input_device and self._input_devices:
+            self.select_input_device(0)
 
     def _process_device_info(self, device_info: dict, index: int) -> None:
         """Process a single device info dictionary."""
         device_name = device_info["name"]
         output_channels = device_info["maxOutputChannels"]
+        input_channels = device_info["maxInputChannels"]
         sample_rate = int(device_info["defaultSampleRate"])
 
-        self.logger.debug(f"Processing device: {device_name} (index: {index}, output: {output_channels})")
+        self.logger.debug(
+            f"Processing device: {device_name} (index: {index}, output: {output_channels}, input: {input_channels})"
+        )
 
         # Add as output device if it has output channels
         if output_channels > 0:
@@ -97,7 +107,19 @@ class AudioDeviceModel:
                 device_type="output",
             )
             self._output_devices.append(output_device)
-            self.logger.info(f"Added output device: {output_device}")
+            self.logger.debug(f"Added output device: {output_device}")
+
+        # Add as input device if it has input channels
+        if input_channels > 0:
+            input_device = AudioDeviceInfo(
+                name=device_name,
+                index=index,
+                channels=input_channels,
+                sample_rate=sample_rate,
+                device_type="input",
+            )
+            self._input_devices.append(input_device)
+            self.logger.debug(f"Added input device: {input_device}")
 
     @property
     def output_devices(self) -> list[AudioDeviceInfo]:
@@ -105,9 +127,19 @@ class AudioDeviceModel:
         return self._output_devices.copy()
 
     @property
+    def input_devices(self) -> list[AudioDeviceInfo]:
+        """Get list of available input devices."""
+        return self._input_devices.copy()
+
+    @property
     def selected_output_device(self) -> Optional[AudioDeviceInfo]:
         """Get currently selected output device."""
         return self._selected_output_device
+
+    @property
+    def selected_input_device(self) -> Optional[AudioDeviceInfo]:
+        """Get currently selected input device."""
+        return self._selected_input_device
 
     def select_output_device(self, device_index: int) -> bool:
         """Select an output device by its index in the output devices list.
@@ -124,6 +156,23 @@ class AudioDeviceModel:
 
         self._selected_output_device = self._output_devices[device_index]
         self.logger.info(f"Selected output device: {self._selected_output_device}")
+        return True
+
+    def select_input_device(self, device_index: int) -> bool:
+        """Select an input device by its index in the input devices list.
+
+        Args:
+            device_index: Index in the input_devices list (not PyAudio device index)
+
+        Returns:
+            True if selection was successful, False otherwise
+        """
+        if not (0 <= device_index < len(self._input_devices)):
+            self.logger.error(f"Invalid input device index: {device_index}")
+            return False
+
+        self._selected_input_device = self._input_devices[device_index]
+        self.logger.info(f"Selected input device: {self._selected_input_device}")
         return True
 
     def get_pyaudio_instance(self) -> Optional[pyaudio.PyAudio]:

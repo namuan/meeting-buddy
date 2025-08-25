@@ -5,7 +5,7 @@ description = "Meeting Buddy application"
 authors = [{ name = "Namuan", email = "namuan@deskriders.dev" }]
 readme = "README.md"
 keywords = ['python', 'meetings', 'productivity']
-requires-python = ">=3.9,<4.0"
+requires-python = ">=3.10,<3.11"
 classifiers = [
     "Intended Audience :: Developers",
     "Programming Language :: Python",
@@ -21,6 +21,7 @@ dependencies = [
     "pyqt6>=6.7.1",
     "numpy>=1.21.0",
     "pyaudio>=0.2.11",
+    "openai-whisper>=20250625",
 ]
 
 [project.urls]
