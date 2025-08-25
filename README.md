@@ -1,10 +1,36 @@
 # Meeting Buddy
 
-## Installation and Running
-
 ### Prerequisites
 
 - Python 3.9 or higher
+
+### Pre-Requisites
+
+#### BlackHole
+
+```
+brew install blackhole-2ch
+```
+
+This may be required if you are not able to see "BlackHold 2ch" in "Audio MIDI Setup" application.
+
+```
+sudo killall coreaudiod
+```
+
+#### Audio MIDI Setup
+
+Open "/System/Applications/Utilities/Audio MIDI Setup.app"
+
+Add a new Device and select "BlackHole 2ch" and the other device where you'd like to route the output.
+
+![](assets/audio-midi-setup.png)
+
+#### Use Aggregated Device for Output
+
+Open "Sounds" preferences and select the new aggregated device as output.
+
+![](assets/sound-output-device.png)
 
 ### Installation
 
@@ -27,31 +53,6 @@ make run
 uv run meeting-buddy
 ```
 
-## Development
-
-### Setting up the Development Environment
-
-```bash
-# Install dependencies and pre-commit hooks
-make install
-
-# Run code quality checks
-make check
-```
-
-### Building the Application
-
-```bash
-# Build a standalone executable
-make build
-
-# Package as macOS application
-make package
-
-# Install the macOS application to Applications folder
-make install-macosx
-```
-
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the [MIT License](LICENSE).
