@@ -7,6 +7,7 @@ __pycache__/
 !assets/
 !scripts/
 !.trae/
+!docs/
 
 # unignore files
 !.gitignore
