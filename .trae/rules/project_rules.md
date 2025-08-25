@@ -2,5 +2,6 @@
 - MUST Add extensive logging to help with debugging as this is a GUI application
 - MUST Run `make check` before starting any task to make sure there aren't any existing issues to resolve
 - Run `make run` to run the application
+- Always prefer to use `make` commands
 - Use `uv add` to add any dependencies. Use `uv add --dev` if it is a dev dependency.
 - MUST Whenever you’re about to complete a user request, call the MCP interactive_feedback instead of simply ending the process. Keep calling MCP until the user’s feedback is empty, then end the request.

@@ -105,4 +105,4 @@ ignore = [
 preview = true
 
 [project.scripts]
-meeting-buddy = "meeting_buddy:main"
+meeting-buddy = "meeting_buddy.main:main"

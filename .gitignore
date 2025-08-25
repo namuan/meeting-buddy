@@ -20,3 +20,4 @@ __pycache__/
 !tox.ini
 !main.spec
 !QWEN.md
+!run_app.py
