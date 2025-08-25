@@ -6,8 +6,10 @@ shared across the application.
 
 from .audio_recorder_thread import AudioRecorderThread
 from .audio_transcriber_thread import AudioTranscriberThread
+from .llm_thread import LLMThread
 
 __all__ = [
     "AudioRecorderThread",
     "AudioTranscriberThread",
+    "LLMThread",
 ]

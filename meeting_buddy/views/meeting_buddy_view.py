@@ -40,13 +40,17 @@ class MeetingBuddyView(QMainWindow):
         self.on_start_recording: Optional[Callable[[], None]] = None
         self.on_stop_recording: Optional[Callable[[], None]] = None
         self.on_progress_changed: Optional[Callable[[int], None]] = None
+        self.on_prompt_changed: Optional[Callable[[str], None]] = None
+        self.on_test_llm: Optional[Callable[[], None]] = None
 
         # UI components
         self.input_device_combo: Optional[QComboBox] = None
         self.progress_slider: Optional[QSlider] = None
         self.start_button: Optional[QPushButton] = None
         self.stop_button: Optional[QPushButton] = None
+        self.prompt_input: Optional[QTextEdit] = None
         self.transcription_text: Optional[QTextEdit] = None
+        self.llm_response_text: Optional[QTextEdit] = None
 
         self._setup_ui()
         self.logger.info("MeetingBuddyView initialized")
@@ -54,7 +58,7 @@ class MeetingBuddyView(QMainWindow):
     def _setup_ui(self) -> None:
         """Set up the user interface."""
         self.setWindowTitle("Meeting Buddy - MVP Architecture")
-        self.setGeometry(100, 100, 500, 450)  # Increased height for new layout
+        self.setGeometry(100, 100, 800, 700)  # Increased size for LLM integration
 
         # Set the main background color
         palette = self.palette()
@@ -72,7 +76,9 @@ class MeetingBuddyView(QMainWindow):
         # Create UI sections
         self._create_device_selection_section(main_layout)
         self._create_controls_section(main_layout)
+        self._create_prompt_section(main_layout)
         self._create_transcription_section(main_layout)
+        self._create_llm_response_section(main_layout)
 
         self._apply_styles()
         self.logger.debug("UI setup completed")
@@ -120,6 +126,37 @@ class MeetingBuddyView(QMainWindow):
         controls_layout.addWidget(self.stop_button)
         main_layout.addLayout(controls_layout)
 
+    def _create_prompt_section(self, main_layout: QVBoxLayout) -> None:
+        """Create the LLM prompt input section."""
+        # LLM Prompt section
+        prompt_label = QLabel("LLM Prompt (Multi-line)")
+        prompt_label.setFont(QFont("System", 13))
+        prompt_label.setContentsMargins(0, 10, 0, 5)
+        prompt_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+
+        self.prompt_input = QTextEdit()
+        self.prompt_input.setPlaceholderText(
+            "Enter your prompt for the LLM here...\n\nExample: 'Summarize the key points from this meeting transcription.'"
+        )
+        # Default prompt will be set by presenter after callbacks are connected
+        self.prompt_input.setFont(QFont("System", 12))
+        self.prompt_input.setMaximumHeight(120)  # Limit height to keep it compact
+        self.prompt_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.prompt_input.textChanged.connect(self._on_prompt_changed)
+
+        # Add test LLM button
+        test_llm_button = QPushButton("Test LLM")
+        test_llm_button.setFont(QFont("System", 11))
+        test_llm_button.clicked.connect(self._on_test_llm_clicked)
+        test_llm_button.setMaximumWidth(100)
+
+        prompt_button_layout = QHBoxLayout()
+        prompt_button_layout.addWidget(self.prompt_input)
+        prompt_button_layout.addWidget(test_llm_button)
+
+        main_layout.addWidget(prompt_label)
+        main_layout.addLayout(prompt_button_layout)
+
     def _create_transcription_section(self, main_layout: QVBoxLayout) -> None:
         """Create the transcription display section."""
         # Transcription section
@@ -137,6 +174,23 @@ class MeetingBuddyView(QMainWindow):
 
         main_layout.addWidget(transcription_label)
         main_layout.addWidget(self.transcription_text)
+
+    def _create_llm_response_section(self, main_layout: QVBoxLayout) -> None:
+        """Create the LLM response display section."""
+        # LLM Response section
+        llm_response_label = QLabel("LLM Response")
+        llm_response_label.setFont(QFont("System", 13))
+        llm_response_label.setContentsMargins(0, 10, 0, 5)
+        llm_response_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+
+        self.llm_response_text = QTextEdit()
+        self.llm_response_text.setPlaceholderText("LLM responses will appear here...")
+        self.llm_response_text.setFont(QFont("System", 12))
+        self.llm_response_text.setReadOnly(True)  # Read-only for responses
+        self.llm_response_text.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+        main_layout.addWidget(llm_response_label)
+        main_layout.addWidget(self.llm_response_text)
 
     def _apply_styles(self) -> None:
         """Apply custom styles to the UI components."""
@@ -222,6 +276,17 @@ class MeetingBuddyView(QMainWindow):
         """Handle progress slider value change."""
         if self.on_progress_changed:
             self.on_progress_changed(value)
+
+    def _on_prompt_changed(self) -> None:
+        """Handle prompt text change."""
+        if self.on_prompt_changed and self.prompt_input:
+            prompt_text = self.prompt_input.toPlainText()
+            self.on_prompt_changed(prompt_text)
+
+    def _on_test_llm_clicked(self) -> None:
+        """Handle test LLM button click."""
+        if self.on_test_llm:
+            self.on_test_llm()
 
     # Public methods for updating UI from presenter
     def populate_input_devices(self, devices: list[str]) -> None:
@@ -426,4 +491,114 @@ class MeetingBuddyView(QMainWindow):
         """
         if self.transcription_text is not None:
             return len(self.transcription_text.toPlainText())
+        return 0
+
+    # LLM Prompt and Response methods
+    def get_prompt_text(self) -> str:
+        """Get the current prompt text.
+
+        Returns:
+            Current prompt text
+        """
+        if self.prompt_input is not None:
+            return self.prompt_input.toPlainText().strip()
+        return ""
+
+    def set_prompt_text(self, text: str) -> None:
+        """Set the prompt text content.
+
+        Args:
+            text: Prompt text to set
+        """
+        if self.prompt_input is not None:
+            self.prompt_input.setPlainText(text)
+            self.logger.debug(f"Set prompt text: {len(text)} characters")
+
+    def clear_prompt_text(self) -> None:
+        """Clear the prompt text content."""
+        if self.prompt_input is not None:
+            self.prompt_input.clear()
+            self.logger.debug("Cleared prompt text")
+
+    def set_llm_response_text(self, text: str) -> None:
+        """Set the LLM response text content.
+
+        Args:
+            text: LLM response text to display
+        """
+        if self.llm_response_text is not None:
+            self.llm_response_text.setPlainText(text)
+
+            # Auto-scroll to bottom for live updates
+            self._scroll_llm_response_to_bottom()
+
+            self.logger.debug(f"Set LLM response text: {len(text)} characters")
+
+    def append_llm_response_text(self, text: str) -> None:
+        """Append text to the LLM response content.
+
+        Args:
+            text: Text to append
+        """
+        if self.llm_response_text is not None:
+            current_text = self.llm_response_text.toPlainText()
+            new_text = current_text + text if current_text else text
+            self.llm_response_text.setPlainText(new_text)
+
+            # Auto-scroll to bottom for live updates
+            self._scroll_llm_response_to_bottom()
+
+            self.logger.debug(f"Appended LLM response text: {len(text)} characters")
+
+    def clear_llm_response_text(self) -> None:
+        """Clear the LLM response text content."""
+        if self.llm_response_text is not None:
+            self.llm_response_text.clear()
+            self.logger.debug("Cleared LLM response text")
+
+    def set_llm_response_status(self, status: str) -> None:
+        """Set LLM response status message.
+
+        Args:
+            status: Status message to display
+        """
+        if self.llm_response_text is not None and not self.llm_response_text.toPlainText().strip():
+            self.llm_response_text.setPlaceholderText(status)
+
+        self.logger.debug(f"LLM response status: {status}")
+
+    def _scroll_llm_response_to_bottom(self) -> None:
+        """Scroll the LLM response text area to the bottom for live updates."""
+        if self.llm_response_text is not None:
+            # Move cursor to end and ensure it's visible
+            cursor = self.llm_response_text.textCursor()
+            cursor.movePosition(cursor.MoveOperation.End)
+            self.llm_response_text.setTextCursor(cursor)
+            self.llm_response_text.ensureCursorVisible()
+
+    def update_llm_response_live(self, new_text: str, is_complete: bool = False) -> None:
+        """Update LLM response with live text, handling streaming and complete results.
+
+        Args:
+            new_text: New response text to add
+            is_complete: Whether this is a complete response or streaming chunk
+        """
+        if self.llm_response_text is not None:
+            if is_complete:
+                # For complete responses, set the full text
+                self.set_llm_response_text(new_text)
+            else:
+                # For streaming responses, append the chunk
+                self.append_llm_response_text(new_text)
+
+            self.logger.debug(f"Live LLM response update: {len(new_text)} chars, complete={is_complete}")
+
+    def get_llm_response_character_count(self) -> int:
+        """Get the current character count of LLM response text.
+
+        Returns:
+            Number of characters in LLM response
+        """
+        if self.llm_response_text is not None:
+            return len(self.llm_response_text.toPlainText())
         return 0

@@ -17,10 +17,12 @@ import numpy as np
 from PyQt6.QtCore import QObject, pyqtSignal
 
 from ..models.audio_device_model import AudioDeviceModel
+from ..models.llm_model import LLMModel
 from ..models.recording_model import RecordingModel
 from ..models.transcription_model import TranscriptionResult
 from ..utils.audio_recorder_thread import AudioRecorderThread
 from ..utils.audio_transcriber_thread import AudioTranscriberThread
+from ..utils.llm_thread import LLMThread
 from ..views.meeting_buddy_view import MeetingBuddyView
 
 
@@ -37,6 +39,13 @@ class MeetingBuddyPresenter(QObject):
     transcription_status_signal = pyqtSignal(str)  # status message
     transcription_error_signal = pyqtSignal(str)  # error message
 
+    # LLM-related signals
+    llm_response_signal = pyqtSignal(str)  # complete LLM response
+    llm_response_chunk_signal = pyqtSignal(str)  # streaming LLM response chunk
+    llm_status_signal = pyqtSignal(str)  # LLM status message
+    llm_error_signal = pyqtSignal(str)  # LLM error message
+    llm_connection_status_signal = pyqtSignal(bool)  # LLM connection status
+
     def __init__(self):
         """Initialize the MeetingBuddyPresenter."""
         super().__init__()
@@ -52,6 +61,13 @@ class MeetingBuddyPresenter(QObject):
         # Initialize models
         self.audio_model = AudioDeviceModel()
         self.recording_model = RecordingModel()
+        self.llm_model = LLMModel()
+
+        # Set up LLM model callbacks
+        self.llm_model.set_response_callback(self._on_llm_model_response)
+        self.llm_model.set_response_chunk_callback(self._on_llm_model_response_chunk)
+        self.llm_model.set_error_callback(self._on_llm_model_error)
+        self.llm_model.set_connection_status_callback(self._on_llm_model_connection_status)
 
         # Initialize view
         self.view = MeetingBuddyView()
@@ -62,11 +78,21 @@ class MeetingBuddyPresenter(QObject):
         self._transcription_queue: Optional[queue.Queue] = None
         self._transcription_active = False
 
+        # LLM threads
+        self._llm_thread: Optional[LLMThread] = None
+        self._llm_request_queue: Optional[queue.Queue] = None
+        self._llm_active = False
+
         # Connect view callbacks to presenter methods
         self._connect_view_callbacks()
 
         # Connect Qt signals to UI update methods
         self._connect_signals()
+
+        # Set default prompt after callbacks are connected
+        default_prompt = "Please summarize the key points and action items from this meeting transcription."
+        self.view.set_prompt_text(default_prompt)
+        self.llm_model.set_user_prompt(default_prompt)
 
         self.logger.info("MeetingBuddyPresenter initialized")
 
@@ -76,6 +102,8 @@ class MeetingBuddyPresenter(QObject):
         self.view.on_start_recording = self._handle_start_recording
         self.view.on_stop_recording = self._handle_stop_recording
         self.view.on_progress_changed = self._handle_progress_changed
+        self.view.on_prompt_changed = self._handle_prompt_changed
+        self.view.on_test_llm = self._handle_test_llm
 
         self.logger.debug("View callbacks connected")
 
@@ -84,6 +112,13 @@ class MeetingBuddyPresenter(QObject):
         self.transcription_result_signal.connect(self._update_transcription_ui)
         self.transcription_status_signal.connect(self._update_transcription_status_ui)
         self.transcription_error_signal.connect(self._show_transcription_error_ui)
+
+        # Connect LLM signals
+        self.llm_response_signal.connect(self._update_llm_response_ui)
+        self.llm_response_chunk_signal.connect(self._update_llm_response_chunk_ui)
+        self.llm_status_signal.connect(self._update_llm_status_ui)
+        self.llm_error_signal.connect(self._show_llm_error_ui)
+        self.llm_connection_status_signal.connect(self._update_llm_connection_status_ui)
 
         self.logger.debug("Qt signals connected")
 
@@ -287,6 +322,13 @@ class MeetingBuddyPresenter(QObject):
         # Set initial recording state
         self.view.set_recording_state(self.recording_model.is_recording)
 
+        # Initialize LLM processing and show status
+        llm_started = self.start_llm_processing()
+        if llm_started:
+            self.view.set_llm_response_status("LLM ready - Enter a prompt and start recording")
+        else:
+            self.view.set_llm_response_status("LLM unavailable - Please ensure Ollama is running")
+
         self.logger.debug("UI initialized with model data")
 
     def _update_device_lists(self) -> None:
@@ -335,6 +377,11 @@ class MeetingBuddyPresenter(QObject):
             else:
                 self.logger.info("Transcription not enabled, recording without transcription")
 
+            # Ensure LLM processing is active for real-time analysis
+            if not self._llm_active:
+                self.logger.info("Starting LLM processing with recording")
+                self.start_llm_processing()
+
             self.logger.info(f"Started recording: {recording.name}")
             self.view.show_info_message("Recording Started", f"Recording '{recording.name}' started")
 
@@ -375,6 +422,46 @@ class MeetingBuddyPresenter(QObject):
         self.logger.debug(f"Progress changed to: {value}%")
         # This could be used for seeking in playback or other progress-related functionality
         # For now, just log the change
+
+    def _handle_prompt_changed(self, prompt_text: str) -> None:
+        """Handle LLM prompt text change.
+
+        Args:
+            prompt_text: New prompt text
+        """
+        self.llm_model.set_user_prompt(prompt_text)
+        self.logger.debug(f"LLM prompt updated: {len(prompt_text)} characters")
+
+    def _handle_test_llm(self) -> None:
+        """Handle test LLM button click."""
+        if not self._llm_active:
+            self.view.show_error_message("LLM Test", "LLM processing is not active. Please ensure Ollama is running.")
+            return
+
+        prompt_text = self.view.get_prompt_text()
+        if not prompt_text.strip():
+            self.view.show_error_message("LLM Test", "Please enter a prompt before testing.")
+            return
+
+        # Test with sample transcription
+        test_transcription = (
+            "This is a test meeting transcription. We discussed project goals, timeline, and next steps."
+        )
+
+        self.logger.info("Testing LLM with sample transcription")
+        self.view.set_llm_response_status("Testing LLM...")
+
+        try:
+            success = self.llm_model.process_transcription(test_transcription)
+            if success:
+                self.logger.info("LLM test request sent successfully")
+                self.view.set_llm_response_status("LLM test in progress...")
+            else:
+                self.logger.warning("Failed to send LLM test request")
+                self.view.show_error_message("LLM Test", "Failed to send test request to LLM.")
+        except Exception as e:
+            self.logger.exception("Error during LLM test")
+            self.view.show_error_message("LLM Test", f"Error during LLM test: {e}")
 
     # Public methods for external control
     def refresh_devices(self) -> None:
@@ -722,6 +809,9 @@ class MeetingBuddyPresenter(QObject):
             status_message = f"Transcribing... ({word_count} words, {char_count} chars)"
             self.transcription_status_signal.emit(status_message)
 
+            # Process with LLM if active and prompt is set
+            self._process_transcription_with_llm(text)
+
             self.logger.debug(f"Transcription UI update completed for '{text}'")
 
         except Exception:
@@ -781,6 +871,277 @@ class MeetingBuddyPresenter(QObject):
         if self._transcription_active:
             self.stop_transcription()
 
+    # LLM-related methods
+    def _process_transcription_with_llm(self, transcription_text: str) -> None:
+        """Process transcription text with LLM if conditions are met.
+
+        Args:
+            transcription_text: Transcription text to process
+        """
+        if not self._llm_active or not self.llm_model.user_prompt.strip():
+            return
+
+        try:
+            # Process transcription with LLM
+            success = self.llm_model.process_transcription(transcription_text)
+            if success:
+                self.logger.debug(f"Sent transcription to LLM: {len(transcription_text)} chars")
+            else:
+                self.logger.warning("Failed to send transcription to LLM")
+        except Exception:
+            self.logger.exception("Error processing transcription with LLM")
+
+    def start_llm_processing(self) -> bool:
+        """Start LLM processing.
+
+        Returns:
+            True if LLM processing started successfully, False otherwise
+        """
+        if self._llm_active:
+            self.logger.warning("LLM processing already active")
+            return True
+
+        try:
+            self.logger.info("Starting LLM processing")
+
+            # Check connection to Ollama
+            if not self.llm_model.check_connection():
+                self.logger.error("Cannot start LLM processing: No connection to Ollama API")
+                self.llm_error_signal.emit("Cannot connect to Ollama API. Please ensure Ollama is running.")
+                return False
+
+            # Create LLM request queue
+            self._llm_request_queue = queue.Queue(maxsize=20)
+
+            # Create and configure LLM thread
+            self._llm_thread = LLMThread(
+                request_queue=self._llm_request_queue, endpoint=self.llm_model.endpoint, model=self.llm_model.model
+            )
+
+            # Set up LLM thread callbacks
+            self._llm_thread.set_response_callback(self._on_llm_response)
+            self._llm_thread.set_response_chunk_callback(self._on_llm_response_chunk)
+            self._llm_thread.set_error_callback(self._on_llm_error)
+            self._llm_thread.set_connection_status_callback(self._on_llm_connection_status)
+
+            # Start LLM thread
+            if not self._llm_thread.start_processing():
+                self.logger.error("Failed to start LLM thread")
+                self._cleanup_llm_thread()
+                return False
+
+            # Start LLM model processing
+            if not self.llm_model.start_processing():
+                self.logger.error("Failed to start LLM model processing")
+                self._cleanup_llm_thread()
+                return False
+
+            self._llm_active = True
+            self.llm_status_signal.emit("LLM processing started")
+            self.logger.info("LLM processing started successfully")
+            return True
+
+        except Exception as e:
+            self.logger.exception("Failed to start LLM processing")
+            self.llm_error_signal.emit(f"Failed to start LLM processing: {e}")
+            self._cleanup_llm_thread()
+            return False
+
+    def stop_llm_processing(self) -> None:
+        """Stop LLM processing."""
+        if not self._llm_active:
+            self.logger.debug("LLM processing not active")
+            return
+
+        try:
+            self.logger.info("Stopping LLM processing")
+            self._llm_active = False
+
+            # Stop LLM model processing
+            self.llm_model.stop_processing()
+
+            # Clean up LLM thread
+            self._cleanup_llm_thread()
+
+            self.llm_status_signal.emit("LLM processing stopped")
+            self.logger.info("LLM processing stopped successfully")
+
+        except Exception as e:
+            self.logger.exception("Error stopping LLM processing")
+            self.llm_error_signal.emit(f"Error stopping LLM processing: {e}")
+
+    def _cleanup_llm_thread(self) -> None:
+        """Clean up LLM thread and resources."""
+        try:
+            # Stop LLM thread
+            if self._llm_thread:
+                self.logger.debug("Stopping LLM thread")
+                self._llm_thread.stop_processing()
+                self._llm_thread = None
+
+            # Clear LLM request queue
+            if self._llm_request_queue:
+                self.logger.debug("Clearing LLM request queue")
+                cleared_count = 0
+                while not self._llm_request_queue.empty():
+                    try:
+                        self._llm_request_queue.get_nowait()
+                        self._llm_request_queue.task_done()
+                        cleared_count += 1
+                    except queue.Empty:
+                        break
+
+                if cleared_count > 0:
+                    self.logger.debug(f"Cleared {cleared_count} items from LLM request queue")
+
+                self._llm_request_queue = None
+
+            self.logger.debug("LLM thread cleanup completed")
+
+        except Exception:
+            self.logger.exception("Error cleaning up LLM thread")
+
+    def _on_llm_response(self, response) -> None:
+        """Handle complete LLM response.
+
+        Args:
+            response: LLMResponse object
+        """
+        try:
+            self.logger.info(f"Received LLM response: {len(response.text)} characters")
+            self.llm_response_signal.emit(response.text)
+        except Exception:
+            self.logger.exception("Error handling LLM response")
+
+    def _on_llm_response_chunk(self, chunk: str) -> None:
+        """Handle streaming LLM response chunk.
+
+        Args:
+            chunk: Response chunk text
+        """
+        try:
+            self.llm_response_chunk_signal.emit(chunk)
+        except Exception:
+            self.logger.exception("Error handling LLM response chunk")
+
+    def _on_llm_error(self, error: Exception) -> None:
+        """Handle LLM error.
+
+        Args:
+            error: Exception that occurred during LLM processing
+        """
+        self.logger.error(f"LLM error: {error}")
+        self.llm_error_signal.emit(f"LLM error: {error}")
+
+    def _on_llm_connection_status(self, connected: bool) -> None:
+        """Handle LLM connection status change.
+
+        Args:
+            connected: True if connected, False otherwise
+        """
+        self.logger.debug(f"LLM connection status: {connected}")
+        self.llm_connection_status_signal.emit(connected)
+
+    # LLM Model callback methods (called directly from LLM model)
+    def _on_llm_model_response(self, response_text: str) -> None:
+        """Handle LLM model response callback.
+
+        Args:
+            response_text: Complete response text from LLM model
+        """
+        try:
+            self.logger.info(f"Received LLM model response: {len(response_text)} characters")
+            self.llm_response_signal.emit(response_text)
+        except Exception:
+            self.logger.exception("Error handling LLM model response")
+
+    def _on_llm_model_response_chunk(self, chunk: str) -> None:
+        """Handle LLM model response chunk callback.
+
+        Args:
+            chunk: Response chunk from LLM model
+        """
+        try:
+            self.llm_response_chunk_signal.emit(chunk)
+        except Exception:
+            self.logger.exception("Error handling LLM model response chunk")
+
+    def _on_llm_model_error(self, error_msg: str) -> None:
+        """Handle LLM model error callback.
+
+        Args:
+            error_msg: Error message from LLM model
+        """
+        self.logger.error(f"LLM model error: {error_msg}")
+        self.llm_error_signal.emit(error_msg)
+
+    def _on_llm_model_connection_status(self, connected: bool) -> None:
+        """Handle LLM model connection status callback.
+
+        Args:
+            connected: True if connected, False otherwise
+        """
+        self.logger.debug(f"LLM model connection status: {connected}")
+        self.llm_connection_status_signal.emit(connected)
+
+    # LLM UI update methods (called via Qt signals)
+    def _update_llm_response_ui(self, response_text: str) -> None:
+        """Update LLM response UI (called via Qt signal on main thread).
+
+        Args:
+            response_text: Complete LLM response text
+        """
+        try:
+            self.view.set_llm_response_text(response_text)
+            self.logger.debug(f"Updated LLM response UI: {len(response_text)} characters")
+        except Exception:
+            self.logger.exception("Error updating LLM response UI")
+
+    def _update_llm_response_chunk_ui(self, chunk: str) -> None:
+        """Update LLM response UI with streaming chunk (called via Qt signal on main thread).
+
+        Args:
+            chunk: Response chunk text
+        """
+        try:
+            self.view.append_llm_response_text(chunk)
+        except Exception:
+            self.logger.exception("Error updating LLM response chunk UI")
+
+    def _update_llm_status_ui(self, status: str) -> None:
+        """Update LLM status UI (called via Qt signal on main thread).
+
+        Args:
+            status: Status message
+        """
+        try:
+            self.view.set_llm_response_status(status)
+        except Exception:
+            self.logger.exception("Error updating LLM status UI")
+
+    def _show_llm_error_ui(self, error_message: str) -> None:
+        """Show LLM error UI (called via Qt signal on main thread).
+
+        Args:
+            error_message: Error message to display
+        """
+        try:
+            self.view.show_error_message("LLM Error", error_message)
+        except Exception:
+            self.logger.exception("Error showing LLM error UI")
+
+    def _update_llm_connection_status_ui(self, connected: bool) -> None:
+        """Update LLM connection status UI (called via Qt signal on main thread).
+
+        Args:
+            connected: True if connected, False otherwise
+        """
+        try:
+            status = "Connected to Ollama" if connected else "Disconnected from Ollama"
+            self.view.set_llm_response_status(status)
+        except Exception:
+            self.logger.exception("Error updating LLM connection status UI")
+
     def is_transcription_active(self) -> bool:
         """Check if transcription is currently active.
 
@@ -808,9 +1169,56 @@ class MeetingBuddyPresenter(QObject):
 
         return stats
 
+    # Public LLM control methods
+    def is_llm_active(self) -> bool:
+        """Check if LLM processing is currently active.
+
+        Returns:
+            True if LLM processing is active, False otherwise
+        """
+        return self._llm_active
+
+    def get_llm_stats(self) -> dict:
+        """Get current LLM processing statistics.
+
+        Returns:
+            Dictionary containing LLM processing statistics
+        """
+        stats = {
+            "llm_active": self._llm_active,
+            "llm_connected": self.llm_model.is_connected,
+            "user_prompt": self.llm_model.user_prompt,
+            "current_response": self.llm_model.current_response,
+        }
+
+        if self._llm_thread:
+            stats.update(self._llm_thread.get_processing_stats())
+
+        return stats
+
+    def set_llm_prompt(self, prompt: str) -> None:
+        """Set the LLM prompt text.
+
+        Args:
+            prompt: Prompt text to set
+        """
+        self.llm_model.set_user_prompt(prompt)
+        self.view.set_prompt_text(prompt)
+        self.logger.info(f"LLM prompt set: {len(prompt)} characters")
+
+    def clear_llm_response(self) -> None:
+        """Clear the LLM response text."""
+        self.llm_model.clear_responses()
+        self.view.clear_llm_response_text()
+        self.logger.debug("LLM response cleared")
+
     def cleanup(self) -> None:
         """Clean up resources."""
         try:
+            # Stop LLM processing if active
+            if self._llm_active:
+                self.stop_llm_processing()
+
             # Stop transcription if active
             if self._transcription_active:
                 self.stop_transcription()
@@ -819,14 +1227,14 @@ class MeetingBuddyPresenter(QObject):
             if self.recording_model.is_recording:
                 self.recording_model.stop_recording()
 
-            # Clean up audio model
+            # Clean up models
             self.audio_model.cleanup()
-
-            # Clean up recording model
             self.recording_model.cleanup()
+            self.llm_model.cleanup()
 
-            # Clean up transcription threads
+            # Clean up threads
             self._cleanup_transcription_threads()
+            self._cleanup_llm_thread()
 
             # Clean up temporary folder
             self._cleanup_temp_folder()
