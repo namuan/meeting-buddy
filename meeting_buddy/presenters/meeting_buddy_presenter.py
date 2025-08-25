@@ -732,6 +732,9 @@ class MeetingBuddyPresenter(QObject):
             }
             self.logger.debug(f"Received transcription result: {result_info}")
 
+            # Store result in the recording model
+            self.recording_model.add_transcription_result(result)
+
             # Emit signal for thread-safe UI update
             self.transcription_result_signal.emit(result.text, result.confidence, result.timestamp.isoformat())
 

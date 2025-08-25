@@ -73,9 +73,20 @@ class TranscriptionModel:
     and speech-to-text conversion using Whisper.
     """
 
-    def __init__(self):
-        """Initialize the TranscriptionModel."""
+    def __init__(self, model_name: str = "base", use_whisper: bool = True, language: Optional[str] = None):
+        """Initialize the TranscriptionModel.
+
+        Args:
+            model_name: Whisper model name ('tiny', 'base', 'small', 'medium', 'large')
+            use_whisper: If False, skip loading Whisper and only act as a data container
+            language: Optional language code for transcription (unused for now)
+        """
         self.logger = logging.getLogger(__name__)
+
+        # Configuration
+        self.model_name = model_name
+        self.use_whisper = use_whisper
+        self.language = language
 
         # Audio chunk management
         self._audio_chunks: list[AudioChunk] = []
@@ -103,13 +114,18 @@ class TranscriptionModel:
 
     def _initialize_whisper(self) -> None:
         """Initialize Whisper model for transcription."""
+        if not self.use_whisper:
+            self.logger.info("Whisper usage disabled for TranscriptionModel (acting as data container only)")
+            self._model_loaded = False
+            return
+
         if whisper is None:
             self.logger.error("Whisper not available. Install openai-whisper package.")
             return
 
         try:
-            self.logger.info("Loading Whisper model...")
-            self._whisper_model = whisper.load_model("medium")
+            self.logger.info(f"Loading Whisper model: {self.model_name}")
+            self._whisper_model = whisper.load_model(self.model_name)
             self._model_loaded = True
             self.logger.info("Whisper model loaded successfully")
         except Exception:

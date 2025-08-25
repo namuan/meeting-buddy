@@ -77,15 +77,18 @@ class RecordingModel:
     def _initialize_transcription_model(self) -> None:
         """Initialize the transcription model."""
         try:
-            self._transcription_model = TranscriptionModel()
-            self._transcription_enabled = self._transcription_model.model_loaded
+            # Create a transcription model that acts as a data container; real-time transcription is handled
+            # by AudioTranscriberThread to avoid duplicate Whisper model loading.
+            self._transcription_model = TranscriptionModel(use_whisper=False)
+            # Enable transcription if the container is available
+            self._transcription_enabled = self._transcription_model is not None
 
-            # Set up callbacks
+            # Set up callbacks (kept for compatibility; the model won't process Whisper itself)
             if self._transcription_model:
                 self._transcription_model.set_transcription_callback(self._on_transcription_updated)
                 self._transcription_model.set_chunk_processed_callback(self._on_chunk_processed)
 
-            self.logger.info(f"Transcription model initialized: enabled={self._transcription_enabled}")
+            self.logger.info(f"Transcription model initialized (container mode): enabled={self._transcription_enabled}")
         except Exception:
             self.logger.exception("Failed to initialize transcription model")
             self._transcription_enabled = False
@@ -298,6 +301,19 @@ class RecordingModel:
             if self._transcription_model:
                 return self._transcription_model.transcription_results
             return []
+
+    def add_transcription_result(self, result: TranscriptionResult) -> None:
+        """Add a transcription result from the transcriber thread and update state."""
+        # Update current transcription text
+        self.append_transcription(result.text)
+        # Store structured result
+        if self._current_recording:
+            self._current_recording.transcription_results.append(result)
+        # Also reflect in transcription model container if available
+        if self._transcription_model:
+            # Private access to maintain existing pattern in model; safe minimal change
+            self._transcription_model._transcription_results.append(result)
+        self.logger.debug(f"Stored transcription result: {result}")
 
     def get_audio_chunks(self, recording_index: Optional[int] = None) -> list[AudioChunk]:
         """Get audio chunks for a recording or current session.
