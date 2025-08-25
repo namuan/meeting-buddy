@@ -73,11 +73,9 @@ class MeetingBuddyPresenter(QObject):
     def _connect_view_callbacks(self) -> None:
         """Connect view callbacks to presenter methods."""
         self.view.on_input_device_changed = self._handle_input_device_changed
-        self.view.on_output_device_changed = self._handle_output_device_changed
         self.view.on_start_recording = self._handle_start_recording
         self.view.on_stop_recording = self._handle_stop_recording
         self.view.on_progress_changed = self._handle_progress_changed
-        self.view.on_recording_selected = self._handle_recording_selected
 
         self.logger.debug("View callbacks connected")
 
@@ -283,9 +281,6 @@ class MeetingBuddyPresenter(QObject):
         # Populate device lists
         self._update_device_lists()
 
-        # Populate recordings list
-        self._update_recordings_list()
-
         # Set initial transcription
         self.view.set_transcription_text(self.recording_model.current_transcription)
 
@@ -300,17 +295,7 @@ class MeetingBuddyPresenter(QObject):
         input_devices = [str(device) for device in self.audio_model.input_devices]
         self.view.populate_input_devices(input_devices)
 
-        # Update output devices
-        output_devices = [str(device) for device in self.audio_model.output_devices]
-        self.view.populate_output_devices(output_devices)
-
         self.logger.debug("Device lists updated")
-
-    def _update_recordings_list(self) -> None:
-        """Update recordings list with current recordings."""
-        recordings = self.recording_model.get_recordings_display_list()
-        self.view.populate_recordings(recordings)
-        self.logger.debug("Recordings list updated")
 
     # Event handlers
     def _handle_input_device_changed(self, index: int) -> None:
@@ -326,20 +311,6 @@ class MeetingBuddyPresenter(QObject):
         else:
             self.logger.error(f"Failed to select input device at index {index}")
             self.view.show_error_message("Device Selection Error", "Failed to select input device")
-
-    def _handle_output_device_changed(self, index: int) -> None:
-        """Handle output device selection change.
-
-        Args:
-            index: Index of selected device in the combo box
-        """
-        if self.audio_model.select_output_device(index):
-            selected_device = self.audio_model.selected_output_device
-            self.logger.info(f"Output device changed to: {selected_device}")
-            self.view.show_info_message("Device Selected", f"Output device: {selected_device.name}")
-        else:
-            self.logger.error(f"Failed to select output device at index {index}")
-            self.view.show_error_message("Device Selection Error", "Failed to select output device")
 
     def _handle_start_recording(self) -> None:
         """Handle start recording button click."""
@@ -391,9 +362,6 @@ class MeetingBuddyPresenter(QObject):
                 self.logger.info(f"Stopped recording: {recording.name}")
                 self.view.show_info_message("Recording Stopped", f"Recording '{recording.name}' saved")
 
-                # Update recordings list
-                self._update_recordings_list()
-
         except Exception as e:
             self.logger.exception("Failed to stop recording")
             self.view.show_error_message("Recording Error", f"Failed to stop recording: {e!s}")
@@ -407,27 +375,6 @@ class MeetingBuddyPresenter(QObject):
         self.logger.debug(f"Progress changed to: {value}%")
         # This could be used for seeking in playback or other progress-related functionality
         # For now, just log the change
-
-    def _handle_recording_selected(self, index: int) -> None:
-        """Handle recording list item selection.
-
-        Args:
-            index: Index of selected recording
-        """
-        recording = self.recording_model.get_recording_by_index(index)
-        if recording:
-            self.logger.info(f"Selected recording: {recording.name}")
-
-            # Display the recording's transcription
-            if recording.transcription:
-                self.view.set_transcription_text(recording.transcription)
-            else:
-                self.view.set_transcription_text("No transcription available for this recording.")
-
-            self.view.show_info_message("Recording Selected", f"Loaded: {recording.name}")
-        else:
-            self.logger.error(f"Invalid recording index: {index}")
-            self.view.show_error_message("Selection Error", "Invalid recording selection")
 
     # Public methods for external control
     def refresh_devices(self) -> None:
@@ -466,15 +413,6 @@ class MeetingBuddyPresenter(QObject):
         self.recording_model.clear_transcription()
         self.view.clear_transcription_text()
         self.logger.debug("Transcription cleared")
-
-    def get_selected_output_device(self) -> Optional[str]:
-        """Get the currently selected output device name.
-
-        Returns:
-            Selected output device name or None
-        """
-        device = self.audio_model.selected_output_device
-        return device.name if device else None
 
     def is_recording(self) -> bool:
         """Check if currently recording.

@@ -63,7 +63,6 @@ class RecordingModel:
     def __init__(self):
         """Initialize the RecordingModel."""
         self.logger = logging.getLogger(__name__)
-        self._recordings: list[RecordingInfo] = []
         self._current_recording: Optional[RecordingInfo] = None
         self._current_transcription: str = ""
         self._is_recording: bool = False
@@ -74,9 +73,6 @@ class RecordingModel:
 
         # Initialize transcription model
         self._initialize_transcription_model()
-
-        # Initialize with some sample recordings for demo purposes
-        self._initialize_sample_recordings()
 
     def _initialize_transcription_model(self) -> None:
         """Initialize the transcription model."""
@@ -115,22 +111,6 @@ class RecordingModel:
         if self._current_recording:
             self._current_recording.transcription_results.append(result)
         self.logger.debug(f"Chunk processed: {result.text}")
-
-    def _initialize_sample_recordings(self) -> None:
-        """Initialize with sample recordings for demonstration."""
-        sample_recordings = [
-            RecordingInfo(name="Recording 1", timestamp=datetime(2025, 7, 25, 7, 54, 53)),
-            RecordingInfo(name="Recording 2", timestamp=datetime(2025, 8, 25, 7, 54, 53)),
-        ]
-
-        for recording in sample_recordings:
-            self._recordings.append(recording)
-            self.logger.debug(f"Added sample recording: {recording}")
-
-    @property
-    def recordings(self) -> list[RecordingInfo]:
-        """Get list of all recordings."""
-        return self._recordings.copy()
 
     @property
     def current_recording(self) -> Optional[RecordingInfo]:
@@ -174,8 +154,8 @@ class RecordingModel:
 
         # Generate recording name if not provided
         if not recording_name:
-            recording_count = len(self._recordings) + 1
-            recording_name = f"Recording {recording_count}"
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            recording_name = f"Recording_{timestamp}"
 
         # Create new recording
         self._current_recording = RecordingInfo(name=recording_name, timestamp=datetime.now())
@@ -216,9 +196,6 @@ class RecordingModel:
             self._current_recording.transcription_results = self._transcription_model.transcription_results.copy()
 
         self._is_recording = False
-
-        # Add to recordings list
-        self._recordings.append(self._current_recording)
 
         stopped_recording = self._current_recording
         self.logger.info(f"Stopped recording: {stopped_recording}")
@@ -271,36 +248,6 @@ class RecordingModel:
 
         self.logger.debug("Cleared transcription content")
 
-    def get_recording_by_index(self, index: int) -> Optional[RecordingInfo]:
-        """Get a recording by its index in the recordings list.
-
-        Args:
-            index: Index of the recording
-
-        Returns:
-            RecordingInfo object or None if index is invalid
-        """
-        if 0 <= index < len(self._recordings):
-            return self._recordings[index]
-        return None
-
-    def delete_recording(self, index: int) -> bool:
-        """Delete a recording by its index.
-
-        Args:
-            index: Index of the recording to delete
-
-        Returns:
-            True if deletion was successful, False otherwise
-        """
-        if 0 <= index < len(self._recordings):
-            deleted_recording = self._recordings.pop(index)
-            self.logger.info(f"Deleted recording: {deleted_recording}")
-            return True
-
-        self.logger.warning(f"Invalid recording index for deletion: {index}")
-        return False
-
     def update_recording_duration(self, duration: float) -> None:
         """Update the duration of the current recording.
 
@@ -310,14 +257,6 @@ class RecordingModel:
         if self._current_recording:
             self._current_recording.duration = duration
             self.logger.debug(f"Updated recording duration: {duration:.1f}s")
-
-    def get_recordings_display_list(self) -> list[str]:
-        """Get a list of recording display strings for UI.
-
-        Returns:
-            List of formatted recording strings
-        """
-        return [str(recording) for recording in self._recordings]
 
     def add_audio_chunk(self, audio_data: np.ndarray, sample_rate: int = 16000) -> Optional[AudioChunk]:
         """Add an audio chunk for transcription during recording.

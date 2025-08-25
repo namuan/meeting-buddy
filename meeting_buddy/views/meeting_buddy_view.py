@@ -13,8 +13,6 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
     QMainWindow,
     QPushButton,
     QSizePolicy,
@@ -39,20 +37,16 @@ class MeetingBuddyView(QMainWindow):
 
         # Callback functions (to be set by presenter)
         self.on_input_device_changed: Optional[Callable[[int], None]] = None
-        self.on_output_device_changed: Optional[Callable[[int], None]] = None
         self.on_start_recording: Optional[Callable[[], None]] = None
         self.on_stop_recording: Optional[Callable[[], None]] = None
         self.on_progress_changed: Optional[Callable[[int], None]] = None
-        self.on_recording_selected: Optional[Callable[[int], None]] = None
 
         # UI components
         self.input_device_combo: Optional[QComboBox] = None
-        self.output_device_combo: Optional[QComboBox] = None
         self.progress_slider: Optional[QSlider] = None
         self.start_button: Optional[QPushButton] = None
         self.stop_button: Optional[QPushButton] = None
         self.transcription_text: Optional[QTextEdit] = None
-        self.recordings_list: Optional[QListWidget] = None
 
         self._setup_ui()
         self.logger.info("MeetingBuddyView initialized")
@@ -79,7 +73,6 @@ class MeetingBuddyView(QMainWindow):
         self._create_device_selection_section(main_layout)
         self._create_controls_section(main_layout)
         self._create_transcription_section(main_layout)
-        self._create_recordings_section(main_layout)
 
         self._apply_styles()
         self.logger.debug("UI setup completed")
@@ -101,22 +94,6 @@ class MeetingBuddyView(QMainWindow):
         input_layout.addWidget(select_input_label)
         input_layout.addWidget(self.input_device_combo)
         main_layout.addLayout(input_layout)
-
-        # Output device selection
-        output_layout = QHBoxLayout()
-        output_layout.setSpacing(10)
-
-        select_output_label = QLabel("Select Output Device (Playback)")
-        select_output_label.setFont(QFont("System", 13))
-
-        self.output_device_combo = QComboBox()
-        self.output_device_combo.setFont(QFont("System", 13))
-        self.output_device_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.output_device_combo.currentIndexChanged.connect(self._on_output_device_changed)
-
-        output_layout.addWidget(select_output_label)
-        output_layout.addWidget(self.output_device_combo)
-        main_layout.addLayout(output_layout)
 
     def _create_controls_section(self, main_layout: QVBoxLayout) -> None:
         """Create the recording controls section."""
@@ -149,33 +126,17 @@ class MeetingBuddyView(QMainWindow):
         transcription_label = QLabel("Transcribed Content")
         transcription_label.setFont(QFont("System", 13))
         transcription_label.setContentsMargins(0, 10, 0, 5)
+        # Set fixed height for the label
+        transcription_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
         self.transcription_text = QTextEdit()
         self.transcription_text.setPlaceholderText("Transcribed content will appear here...")
-        self.transcription_text.setMaximumHeight(120)
         self.transcription_text.setFont(QFont("System", 12))
+        # Set expanding size policy to fill available space
+        self.transcription_text.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         main_layout.addWidget(transcription_label)
         main_layout.addWidget(self.transcription_text)
-
-    def _create_recordings_section(self, main_layout: QVBoxLayout) -> None:
-        """Create the recordings list section."""
-        # Recordings section
-        recordings_label = QLabel("Recordings")
-        recordings_label.setFont(QFont("System", 13))
-        recordings_label.setContentsMargins(0, 10, 0, 5)
-
-        self.recordings_list = QListWidget()
-        # Use a monospaced font for the recordings list
-        recordings_font = QFont("Menlo")
-        if recordings_font.styleHint() != QFont.StyleHint.Monospace:
-            recordings_font = QFont("Courier")  # Fallback
-        recordings_font.setPointSize(13)
-        self.recordings_list.setFont(recordings_font)
-        self.recordings_list.itemClicked.connect(self._on_recording_selected)
-
-        main_layout.addWidget(recordings_label)
-        main_layout.addWidget(self.recordings_list)
 
     def _apply_styles(self) -> None:
         """Apply custom styles to the UI components."""
@@ -247,11 +208,6 @@ class MeetingBuddyView(QMainWindow):
         if self.on_input_device_changed:
             self.on_input_device_changed(index)
 
-    def _on_output_device_changed(self, index: int) -> None:
-        """Handle output device selection change."""
-        if self.on_output_device_changed:
-            self.on_output_device_changed(index)
-
     def _on_start_recording(self) -> None:
         """Handle start recording button click."""
         if self.on_start_recording:
@@ -266,12 +222,6 @@ class MeetingBuddyView(QMainWindow):
         """Handle progress slider value change."""
         if self.on_progress_changed:
             self.on_progress_changed(value)
-
-    def _on_recording_selected(self, item: QListWidgetItem) -> None:
-        """Handle recording list item selection."""
-        if self.on_recording_selected and self.recordings_list:
-            index = self.recordings_list.row(item)
-            self.on_recording_selected(index)
 
     # Public methods for updating UI from presenter
     def populate_input_devices(self, devices: list[str]) -> None:
@@ -294,43 +244,6 @@ class MeetingBuddyView(QMainWindow):
             self.input_device_combo.addItem(device)
 
         self.logger.debug(f"Populated {len(devices)} input devices")
-
-    def populate_output_devices(self, devices: list[str]) -> None:
-        """Populate the output device combo box.
-
-        Args:
-            devices: List of device display names
-        """
-        if self.output_device_combo is None:
-            self.logger.error("output_device_combo is None!")
-            return
-
-        self.output_device_combo.clear()
-        if not devices:
-            self.output_device_combo.addItem("No output devices found")
-            self.logger.warning("No output devices to populate")
-            return
-
-        for device in devices:
-            self.output_device_combo.addItem(device)
-
-        self.logger.debug(f"Populated {len(devices)} output devices")
-
-    def populate_recordings(self, recordings: list[str]) -> None:
-        """Populate the recordings list.
-
-        Args:
-            recordings: List of recording display names
-        """
-        if self.recordings_list is None:
-            return
-
-        self.recordings_list.clear()
-        for recording in recordings:
-            item = QListWidgetItem(recording)
-            self.recordings_list.addItem(item)
-
-        self.logger.debug(f"Populated {len(recordings)} recordings")
 
     def set_transcription_text(self, text: str) -> None:
         """Set the transcription text content.
