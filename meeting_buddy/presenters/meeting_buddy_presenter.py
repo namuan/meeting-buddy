@@ -101,9 +101,7 @@ class MeetingBuddyPresenter(QObject):
         self.view.on_input_device_changed = self._handle_input_device_changed
         self.view.on_start_recording = self._handle_start_recording
         self.view.on_stop_recording = self._handle_stop_recording
-        self.view.on_progress_changed = self._handle_progress_changed
         self.view.on_prompt_changed = self._handle_prompt_changed
-        self.view.on_test_llm = self._handle_test_llm
 
         self.logger.debug("View callbacks connected")
 
@@ -413,16 +411,6 @@ class MeetingBuddyPresenter(QObject):
             self.logger.exception("Failed to stop recording")
             self.view.show_error_message("Recording Error", f"Failed to stop recording: {e!s}")
 
-    def _handle_progress_changed(self, value: int) -> None:
-        """Handle progress slider value change.
-
-        Args:
-            value: New progress value (0-100)
-        """
-        self.logger.debug(f"Progress changed to: {value}%")
-        # This could be used for seeking in playback or other progress-related functionality
-        # For now, just log the change
-
     def _handle_prompt_changed(self, prompt_text: str) -> None:
         """Handle LLM prompt text change.
 
@@ -431,41 +419,6 @@ class MeetingBuddyPresenter(QObject):
         """
         self.llm_model.set_user_prompt(prompt_text)
         self.logger.debug(f"LLM prompt updated: {len(prompt_text)} characters")
-
-    def _handle_test_llm(self) -> None:
-        """Handle test LLM button click."""
-        if not self._llm_active:
-            self.view.show_error_message("LLM Test", "LLM processing is not active. Please ensure Ollama is running.")
-            return
-
-        prompt_text = self.view.get_prompt_text()
-        if not prompt_text.strip():
-            self.view.show_error_message("LLM Test", "Please enter a prompt before testing.")
-            return
-
-        # Use current full transcription if available, otherwise use sample
-        current_transcription = self.recording_model.current_transcription.strip()
-        if current_transcription:
-            test_transcription = current_transcription
-            self.logger.info(f"Testing LLM with current transcription ({len(current_transcription)} chars)")
-        else:
-            test_transcription = (
-                "This is a test meeting transcription. We discussed project goals, timeline, and next steps."
-            )
-            self.logger.info("Testing LLM with sample transcription (no current transcription available)")
-        self.view.set_llm_response_status("Testing LLM...")
-
-        try:
-            success = self.llm_model.process_transcription(test_transcription)
-            if success:
-                self.logger.info("LLM test request sent successfully")
-                self.view.set_llm_response_status("LLM test in progress...")
-            else:
-                self.logger.warning("Failed to send LLM test request")
-                self.view.show_error_message("LLM Test", "Failed to send test request to LLM.")
-        except Exception as e:
-            self.logger.exception("Error during LLM test")
-            self.view.show_error_message("LLM Test", f"Error during LLM test: {e}")
 
     # Public methods for external control
     def refresh_devices(self) -> None:

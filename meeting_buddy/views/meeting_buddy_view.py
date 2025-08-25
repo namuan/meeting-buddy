@@ -7,7 +7,6 @@ all UI components and user interface logic.
 import logging
 from typing import Callable, Optional
 
-from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFont, QPalette
 from PyQt6.QtWidgets import (
     QComboBox,
@@ -16,7 +15,6 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QPushButton,
     QSizePolicy,
-    QSlider,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -39,13 +37,10 @@ class MeetingBuddyView(QMainWindow):
         self.on_input_device_changed: Optional[Callable[[int], None]] = None
         self.on_start_recording: Optional[Callable[[], None]] = None
         self.on_stop_recording: Optional[Callable[[], None]] = None
-        self.on_progress_changed: Optional[Callable[[int], None]] = None
-        self.on_prompt_changed: Optional[Callable[[str], None]] = None
-        self.on_test_llm: Optional[Callable[[], None]] = None
 
+        self.on_prompt_changed: Optional[Callable[[str], None]] = None
         # UI components
         self.input_device_combo: Optional[QComboBox] = None
-        self.progress_slider: Optional[QSlider] = None
         self.start_button: Optional[QPushButton] = None
         self.stop_button: Optional[QPushButton] = None
         self.prompt_input: Optional[QTextEdit] = None
@@ -75,7 +70,6 @@ class MeetingBuddyView(QMainWindow):
 
         # Create UI sections
         self._create_device_selection_section(main_layout)
-        self._create_controls_section(main_layout)
         self._create_prompt_section(main_layout)
         self._create_transcription_section(main_layout)
         self._create_llm_response_section(main_layout)
@@ -84,8 +78,8 @@ class MeetingBuddyView(QMainWindow):
         self.logger.debug("UI setup completed")
 
     def _create_device_selection_section(self, main_layout: QVBoxLayout) -> None:
-        """Create the device selection section."""
-        # Input device selection (for recording)
+        """Create the device selection section with Start/Stop buttons."""
+        # Input device selection with Start/Stop buttons
         input_layout = QHBoxLayout()
         input_layout.setSpacing(10)
 
@@ -97,21 +91,6 @@ class MeetingBuddyView(QMainWindow):
         self.input_device_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.input_device_combo.currentIndexChanged.connect(self._on_input_device_changed)
 
-        input_layout.addWidget(select_input_label)
-        input_layout.addWidget(self.input_device_combo)
-        main_layout.addLayout(input_layout)
-
-    def _create_controls_section(self, main_layout: QVBoxLayout) -> None:
-        """Create the recording controls section."""
-        # Middle layout for controls
-        controls_layout = QHBoxLayout()
-        controls_layout.setSpacing(10)
-
-        self.progress_slider = QSlider(Qt.Orientation.Horizontal)
-        self.progress_slider.setValue(25)
-        self.progress_slider.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.progress_slider.valueChanged.connect(self._on_progress_changed)
-
         self.start_button = QPushButton("Start")
         self.start_button.setFont(QFont("System", 13))
         self.start_button.clicked.connect(self._on_start_recording)
@@ -121,10 +100,11 @@ class MeetingBuddyView(QMainWindow):
         self.stop_button.clicked.connect(self._on_stop_recording)
         self.stop_button.setEnabled(False)  # Initially disabled
 
-        controls_layout.addWidget(self.progress_slider)
-        controls_layout.addWidget(self.start_button)
-        controls_layout.addWidget(self.stop_button)
-        main_layout.addLayout(controls_layout)
+        input_layout.addWidget(select_input_label)
+        input_layout.addWidget(self.input_device_combo)
+        input_layout.addWidget(self.start_button)
+        input_layout.addWidget(self.stop_button)
+        main_layout.addLayout(input_layout)
 
     def _create_prompt_section(self, main_layout: QVBoxLayout) -> None:
         """Create the LLM prompt input section."""
@@ -144,18 +124,8 @@ class MeetingBuddyView(QMainWindow):
         self.prompt_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.prompt_input.textChanged.connect(self._on_prompt_changed)
 
-        # Add test LLM button
-        test_llm_button = QPushButton("Test LLM")
-        test_llm_button.setFont(QFont("System", 11))
-        test_llm_button.clicked.connect(self._on_test_llm_clicked)
-        test_llm_button.setMaximumWidth(100)
-
-        prompt_button_layout = QHBoxLayout()
-        prompt_button_layout.addWidget(self.prompt_input)
-        prompt_button_layout.addWidget(test_llm_button)
-
         main_layout.addWidget(prompt_label)
-        main_layout.addLayout(prompt_button_layout)
+        main_layout.addWidget(self.prompt_input)
 
     def _create_transcription_section(self, main_layout: QVBoxLayout) -> None:
         """Create the transcription display section."""
@@ -224,25 +194,7 @@ class MeetingBuddyView(QMainWindow):
                 background-color: #f5f5f5;
                 color: #999999;
             }
-            QSlider::groove:horizontal {
-                border: 1px solid #bbbbbb;
-                background: #e0e0e0;
-                height: 8px;
-                border-radius: 4px;
-            }
-            QSlider::sub-page:horizontal {
-                background: #007aff;
-                border: 1px solid #bbbbbb;
-                height: 8px;
-                border-radius: 4px;
-            }
-            QSlider::handle:horizontal {
-                background: #ffffff;
-                border: 1px solid #bbbbbb;
-                width: 18px;
-                margin: -5px 0;
-                border-radius: 9px;
-            }
+
             QListWidget {
                 background-color: white;
                 border: 1px solid #cccccc;
@@ -272,21 +224,11 @@ class MeetingBuddyView(QMainWindow):
         if self.on_stop_recording:
             self.on_stop_recording()
 
-    def _on_progress_changed(self, value: int) -> None:
-        """Handle progress slider value change."""
-        if self.on_progress_changed:
-            self.on_progress_changed(value)
-
     def _on_prompt_changed(self) -> None:
         """Handle prompt text change."""
         if self.on_prompt_changed and self.prompt_input:
             prompt_text = self.prompt_input.toPlainText()
             self.on_prompt_changed(prompt_text)
-
-    def _on_test_llm_clicked(self) -> None:
-        """Handle test LLM button click."""
-        if self.on_test_llm:
-            self.on_test_llm()
 
     # Public methods for updating UI from presenter
     def populate_input_devices(self, devices: list[str]) -> None:
@@ -362,25 +304,6 @@ class MeetingBuddyView(QMainWindow):
                 self.start_button.setText("Start")
 
             self.logger.debug(f"Set recording state: {is_recording}")
-
-    def set_progress_value(self, value: int) -> None:
-        """Set the progress slider value.
-
-        Args:
-            value: Progress value (0-100)
-        """
-        if self.progress_slider is not None:
-            self.progress_slider.setValue(value)
-
-    def get_progress_value(self) -> int:
-        """Get the current progress slider value.
-
-        Returns:
-            Current progress value (0-100)
-        """
-        if self.progress_slider is not None:
-            return self.progress_slider.value()
-        return 0
 
     def show_error_message(self, title: str, message: str) -> None:
         """Show an error message to the user.
