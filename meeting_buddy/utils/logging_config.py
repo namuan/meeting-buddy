@@ -5,35 +5,142 @@ for the entire application.
 """
 
 import logging
+import re
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
+
+# Global logging configuration storage
+_logging_config: dict[str, Any] = {}
 
 
-def setup_logging(verbosity: int = 0, log_file: Optional[str] = None, log_to_console: bool = True) -> None:
+def _store_logging_config(config: dict[str, Any]) -> None:
+    """Store logging configuration for global access."""
+    global _logging_config
+    _logging_config.update(config)
+
+
+def get_logging_config() -> dict[str, Any]:
+    """Get current logging configuration."""
+    return _logging_config.copy()
+
+
+class StructuredFormatter(logging.Formatter):
+    """Enhanced formatter with data redaction capabilities."""
+
+    def __init__(self, fmt=None, datefmt=None, redact_sensitive=True):
+        super().__init__(fmt, datefmt)
+        self.redact_sensitive = redact_sensitive
+        self.sensitive_patterns = [
+            (
+                re.compile(r"(password|token|key|secret|api_key|auth|credential)=[^\s]+", re.IGNORECASE),
+                r"\1=[REDACTED]",
+            ),
+            (re.compile(r"(prompt|transcription_text)=([^|]+)", re.IGNORECASE), self._redact_long_text),
+        ]
+
+    def _redact_long_text(self, match):
+        """Redact long text fields."""
+        key = match.group(1)
+        value = match.group(2).strip()
+        if len(value) > 50:
+            return f"{key}={value[:20]}...{value[-10:]} (len={len(value)})"
+        return match.group(0)
+
+    def format(self, record):
+        """Format log record with optional data redaction."""
+        formatted = super().format(record)
+
+        if self.redact_sensitive:
+            for pattern, replacement in self.sensitive_patterns:
+                if callable(replacement):
+                    formatted = pattern.sub(replacement, formatted)
+                else:
+                    formatted = pattern.sub(replacement, formatted)
+
+        return formatted
+
+
+def _setup_trace_level() -> None:
+    """Setup TRACE logging level if not already defined."""
+    if not hasattr(logging, "TRACE"):
+        logging.TRACE = 5
+        logging.addLevelName(logging.TRACE, "TRACE")
+
+        def trace(self, message, *args, **kwargs):
+            if self.isEnabledFor(logging.TRACE):
+                self._log(logging.TRACE, message, args, **kwargs)
+
+        logging.Logger.trace = trace
+
+
+def _get_logging_level(verbosity: int) -> int:
+    """Get logging level based on verbosity."""
+    if verbosity == 1:
+        return logging.INFO
+    elif verbosity == 2:
+        return logging.DEBUG
+    elif verbosity >= 3:
+        return logging.TRACE
+    else:
+        return logging.WARNING
+
+
+def _create_formatters(enable_structured: bool, redact_sensitive: bool) -> tuple:
+    """Create logging formatters."""
+    if enable_structured:
+        detailed_formatter = StructuredFormatter(
+            fmt="%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            redact_sensitive=redact_sensitive,
+        )
+        simple_formatter = StructuredFormatter(
+            fmt="%(asctime)s - %(filename)s:%(lineno)d - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            redact_sensitive=redact_sensitive,
+        )
+    else:
+        detailed_formatter = logging.Formatter(
+            fmt="%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+        simple_formatter = logging.Formatter(
+            fmt="%(asctime)s - %(filename)s:%(lineno)d - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+        )
+    return detailed_formatter, simple_formatter
+
+
+def setup_logging(
+    verbosity: int = 0,
+    log_file: Optional[str] = None,
+    log_to_console: bool = True,
+    enable_structured_logging: bool = True,
+    redact_sensitive_data: bool = True,
+) -> None:
     """Setup logging configuration for the application.
 
     Args:
-        verbosity: Logging verbosity level (0=WARNING, 1=INFO, 2=DEBUG)
+        verbosity: Logging verbosity level (0=WARNING, 1=INFO, 2=DEBUG, 3=TRACE)
         log_file: Optional path to log file. If None, no file logging.
         log_to_console: Whether to log to console (default: True)
+        enable_structured_logging: Whether to enable structured logging features
+        redact_sensitive_data: Whether to redact sensitive data in logs
     """
-    # Determine logging level based on verbosity
-    logging_level = logging.WARNING
-    if verbosity == 1:
-        logging_level = logging.INFO
-    elif verbosity >= 2:
-        logging_level = logging.DEBUG
+    # Setup TRACE level and get logging level
+    _setup_trace_level()
+    logging_level = _get_logging_level(verbosity)
+
+    # Store configuration for global access
+    _store_logging_config({
+        "verbosity": verbosity,
+        "enable_structured_logging": enable_structured_logging,
+        "redact_sensitive_data": redact_sensitive_data,
+        "log_file": log_file,
+        "log_to_console": log_to_console,
+    })
 
     # Create formatters
-    detailed_formatter = logging.Formatter(
-        fmt="%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-
-    simple_formatter = logging.Formatter(
-        fmt="%(asctime)s - %(filename)s:%(lineno)d - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
-    )
+    detailed_formatter, simple_formatter = _create_formatters(enable_structured_logging, redact_sensitive_data)
 
     # Create handlers list
     handlers = []
@@ -190,6 +297,21 @@ class LoggerMixin:
         return self._logger
 
 
+def get_verbosity_level() -> int:
+    """Get current verbosity level from configuration."""
+    return _logging_config.get("verbosity", 1)
+
+
+def is_structured_logging_enabled() -> bool:
+    """Check if structured logging is enabled."""
+    return _logging_config.get("enable_structured_logging", True)
+
+
+def is_sensitive_data_redaction_enabled() -> bool:
+    """Check if sensitive data redaction is enabled."""
+    return _logging_config.get("redact_sensitive_data", True)
+
+
 # Default configuration for the application
 def setup_default_logging() -> None:
     """Setup default logging configuration for the application."""
@@ -197,4 +319,6 @@ def setup_default_logging() -> None:
         verbosity=1,  # INFO level by default
         log_to_console=True,
         log_file=None,  # No file logging by default
+        enable_structured_logging=True,
+        redact_sensitive_data=True,
     )

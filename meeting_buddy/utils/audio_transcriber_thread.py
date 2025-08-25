@@ -4,7 +4,6 @@ This module contains the AudioTranscriberThread class that handles
 real-time transcription processing using Whisper.
 """
 
-import logging
 import queue
 import threading
 import time
@@ -19,13 +18,16 @@ except ImportError:
     whisper = None
 
 from ..models.transcription_data import TranscriptionResult, TranscriptionStats
+from .performance_metrics import get_performance_tracker
+from .structured_logging import EnhancedLoggerMixin, timed_operation
 
 
-class AudioTranscriberThread(threading.Thread):
+class AudioTranscriberThread(threading.Thread, EnhancedLoggerMixin):
     """Thread class for real-time audio transcription using Whisper.
 
     This class processes audio chunks from a queue and generates
     transcription results using OpenAI's Whisper model.
+    Enhanced with structured logging and performance metrics.
     """
 
     def __init__(
@@ -46,7 +48,18 @@ class AudioTranscriberThread(threading.Thread):
             processing_timeout: Timeout for queue operations in seconds
         """
         super().__init__(daemon=True)
-        self.logger = logging.getLogger(__name__)
+        EnhancedLoggerMixin.__init__(self)
+
+        # Set up structured logging context
+        self.structured_logger.update_context(
+            thread_type="audio_transcriber",
+            model_name=model_name,
+            language=language or "auto",
+            max_queue_size=max_queue_size,
+        )
+
+        # Performance tracker
+        self.performance_tracker = get_performance_tracker()
 
         # Configuration
         self.audio_queue = audio_queue
@@ -78,26 +91,38 @@ class AudioTranscriberThread(threading.Thread):
         # Initialize Whisper model
         self._initialize_whisper()
 
-        self.logger.info(f"AudioTranscriberThread initialized with model: {model_name}")
-        self.logger.debug(
-            f"Transcriber configuration: model={model_name}, language={language}, max_queue_size={max_queue_size}, timeout={processing_timeout}s"
+        self.structured_logger.info(
+            "AudioTranscriberThread initialized", initialization_complete=True, whisper_available=whisper is not None
         )
 
+        self.log_method_call(
+            "__init__",
+            model_name=model_name,
+            language=language,
+            max_queue_size=max_queue_size,
+            processing_timeout=processing_timeout,
+        )
+
+    @timed_operation("whisper_model_initialization")
     def _initialize_whisper(self) -> None:
         """Initialize Whisper model for transcription."""
         if whisper is None:
-            self.logger.error("Whisper not available. Install openai-whisper package.")
+            self.structured_logger.error(
+                "Whisper not available", whisper_installed=False, suggestion="Install openai-whisper package"
+            )
             return
 
         try:
-            self.logger.info(f"Loading Whisper model: {self.model_name}")
+            self.structured_logger.info("Loading Whisper model", model_name=self.model_name, loading_started=True)
             if self._progress_callback:
                 self._progress_callback(f"Loading {self.model_name} model...")
 
             self._whisper_model = whisper.load_model(self.model_name)
             self._model_loaded = True
 
-            self.logger.info(f"Whisper model '{self.model_name}' loaded successfully")
+            self.structured_logger.info(
+                "Whisper model loaded successfully", model_name=self.model_name, model_loaded=True
+            )
             self.logger.debug("Model loading completed in background thread")
             if self._progress_callback:
                 self._progress_callback("Model loaded successfully")
@@ -499,11 +524,12 @@ class AudioTranscriberThread(threading.Thread):
                 self.logger.exception("Error during transcription cleanup")
 
     def get_transcription_stats(self) -> dict:
-        """Get current transcription statistics.
+        """Get current transcription statistics with performance metrics.
 
         Returns:
-            Dictionary containing transcription statistics
+            Dictionary containing transcription statistics and performance data
         """
+        # Get basic transcription stats
         stats_dict = self._stats.to_dict()
         stats_dict.update({
             "is_transcribing": self._transcribing,
@@ -512,6 +538,34 @@ class AudioTranscriberThread(threading.Thread):
             "language": self.language,
             "queue_size": self.audio_queue.qsize(),
         })
+
+        # Add performance metrics
+        performance_stats = self.performance_tracker.get_metrics()
+        transcription_ops = [
+            "whisper_model_initialization",
+            "audio_chunk_processing",
+            "whisper_transcription",
+            "audio_preprocessing",
+        ]
+
+        performance_data = {}
+        for op in transcription_ops:
+            if op in performance_stats:
+                performance_data[f"{op}_metrics"] = performance_stats[op]
+
+        if performance_data:
+            stats_dict["performance_metrics"] = performance_data
+
+        # Add performance summary
+        summary = self.performance_tracker.get_summary()
+        if summary["total_operations"] > 0:
+            stats_dict["performance_summary"] = {
+                "total_operations": summary["total_operations"],
+                "average_duration": summary["average_duration"],
+                "operations_per_second": summary["operations_per_second"],
+                "success_rate": summary["success_rate"],
+            }
+
         return stats_dict
 
     def reload_model(self, model_name: Optional[str] = None) -> bool:
