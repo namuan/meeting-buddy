@@ -1,0 +1,21 @@
+# ignore all root items
+/*
+__pycache__/
+
+# unignore folders
+!focused_reminder/
+!assets/
+!scripts/
+
+# unignore files
+!.gitignore
+!README.md
+!pyproject.toml
+!uv.lock
+!Makefile
+!.pre-commit-config.yaml
+!.editorconfig
+!LICENSE
+!tox.ini
+!main.spec
+!entitlements.plist
