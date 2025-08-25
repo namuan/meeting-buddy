@@ -18,7 +18,7 @@ try:
 except ImportError:
     whisper = None
 
-from ..models.transcription_model import TranscriptionResult
+from ..models.transcription_data import TranscriptionResult, TranscriptionStats
 
 
 class AudioTranscriberThread(threading.Thread):
@@ -65,12 +65,8 @@ class AudioTranscriberThread(threading.Thread):
         self._transcribing_lock = threading.RLock()  # Reentrant lock for thread safety
         self._cleanup_lock = threading.Lock()  # Lock for cleanup operations
 
-        # Statistics
-        self._chunks_processed = 0
-        self._total_processing_time = 0.0
-        self._last_processing_time = 0.0
-
-        # Results storage
+        # Statistics and results storage
+        self._stats = TranscriptionStats()
         self._transcription_results: list[TranscriptionResult] = []
 
         # Callbacks
@@ -161,19 +157,17 @@ class AudioTranscriberThread(threading.Thread):
     @property
     def chunks_processed(self) -> int:
         """Get number of chunks processed."""
-        return self._chunks_processed
+        return self._stats.chunks_processed
 
     @property
     def average_processing_time(self) -> float:
         """Get average processing time per chunk in seconds."""
-        if self._chunks_processed == 0:
-            return 0.0
-        return self._total_processing_time / self._chunks_processed
+        return self._stats.average_processing_time
 
     @property
     def last_processing_time(self) -> float:
         """Get processing time of last chunk in seconds."""
-        return self._last_processing_time
+        return self._stats.last_processing_time
 
     def start_transcribing(self) -> bool:
         """Start the transcription process.
@@ -321,6 +315,7 @@ class AudioTranscriberThread(threading.Thread):
                 self._handle_empty_transcription(chunk_id, processed_audio)
 
         except Exception as e:
+            self._stats.record_error()
             self.logger.exception(f"Error processing audio chunk: {chunk_data.get('chunk_id', 'unknown')}")
             if self._error_callback:
                 self._error_callback(e)
@@ -393,9 +388,8 @@ class AudioTranscriberThread(threading.Thread):
 
         # Update statistics
         processing_time = time.time() - start_time
-        self._chunks_processed += 1
-        self._total_processing_time += processing_time
-        self._last_processing_time = processing_time
+        self._stats.update_processing_time(processing_time)
+        self._stats.record_successful_transcription()
 
         self.logger.info(
             f"Transcribed chunk {transcription_result.chunk_id}: '{transcription_result.text}' "
@@ -428,6 +422,9 @@ class AudioTranscriberThread(threading.Thread):
 
     def _handle_empty_transcription(self, chunk_id: str, audio_data) -> None:
         """Handle empty transcription result."""
+        # Record empty transcription in stats
+        self._stats.record_empty_transcription()
+
         # Note: sample_rate is not defined in this class, using a default value
         sample_rate = getattr(self, "sample_rate", 16000)  # Default to 16kHz
         self.logger.debug(
@@ -494,9 +491,7 @@ class AudioTranscriberThread(threading.Thread):
                 self.clear_queue()
 
                 # Reset statistics
-                self._chunks_processed = 0
-                self._total_processing_time = 0.0
-                self._last_processing_time = 0.0
+                self._stats.reset()
 
                 self.logger.debug("Transcription resources cleaned up")
 
@@ -509,17 +504,15 @@ class AudioTranscriberThread(threading.Thread):
         Returns:
             Dictionary containing transcription statistics
         """
-        return {
+        stats_dict = self._stats.to_dict()
+        stats_dict.update({
             "is_transcribing": self._transcribing,
             "model_loaded": self._model_loaded,
             "model_name": self.model_name,
             "language": self.language,
-            "chunks_processed": self._chunks_processed,
             "queue_size": self.audio_queue.qsize(),
-            "average_processing_time": self.average_processing_time,
-            "last_processing_time": self._last_processing_time,
-            "total_processing_time": self._total_processing_time,
-        }
+        })
+        return stats_dict
 
     def reload_model(self, model_name: Optional[str] = None) -> bool:
         """Reload the Whisper model.

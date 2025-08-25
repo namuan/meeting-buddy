@@ -17,9 +17,9 @@ import numpy as np
 from PyQt6.QtCore import QObject, pyqtSignal
 
 from ..models.audio_device_model import AudioDeviceModel
-from ..models.llm_model import LLMModel
+from ..models.llm_model import LLMModel, LLMRequest
 from ..models.recording_model import RecordingModel
-from ..models.transcription_model import TranscriptionResult
+from ..models.transcription_data import TranscriptionResult
 from ..utils.audio_recorder_thread import AudioRecorderThread
 from ..utils.audio_transcriber_thread import AudioTranscriberThread
 from ..utils.llm_thread import LLMThread
@@ -525,7 +525,8 @@ class MeetingBuddyPresenter(QObject):
 
             # Log transcription model status
             model_available = self.recording_model.transcription_model is not None
-            model_loaded = self.recording_model.transcription_model.model_loaded if model_available else False
+            # TranscriptionModel no longer loads Whisper directly - that's handled by AudioTranscriberThread
+            model_loaded = model_available  # Model is available if transcription model exists
             transcription_stats = {
                 "model_available": model_available,
                 "model_loaded": model_loaded,
@@ -852,12 +853,18 @@ class MeetingBuddyPresenter(QObject):
             return
 
         try:
-            # Process transcription with LLM
-            success = self.llm_model.process_transcription(transcription_text)
-            if success:
-                self.logger.debug(f"Sent transcription to LLM: {len(transcription_text)} chars")
-            else:
-                self.logger.warning("Failed to send transcription to LLM")
+            # Send transcription to LLM thread for processing
+            if self._llm_thread and self._llm_request_queue:
+                from datetime import datetime
+
+                request = LLMRequest(
+                    prompt=self.llm_model.user_prompt, transcription_text=transcription_text, timestamp=datetime.now()
+                )
+                try:
+                    self._llm_request_queue.put_nowait(request)
+                    self.logger.debug(f"Sent transcription to LLM: {len(transcription_text)} chars")
+                except queue.Full:
+                    self.logger.warning("LLM request queue is full, dropping transcription")
         except Exception:
             self.logger.exception("Error processing transcription with LLM")
 
@@ -874,18 +881,17 @@ class MeetingBuddyPresenter(QObject):
         try:
             self.logger.info("Starting LLM processing")
 
-            # Check connection to Ollama
-            if not self.llm_model.check_connection():
-                self.logger.error("Cannot start LLM processing: No connection to Ollama API")
-                self.llm_error_signal.emit("Cannot connect to Ollama API. Please ensure Ollama is running.")
-                return False
+            # LLM connection checking is now handled by LLMThread
+            # The model only manages data
 
             # Create LLM request queue
             self._llm_request_queue = queue.Queue(maxsize=20)
 
-            # Create and configure LLM thread
+            # Create and configure LLM thread with default configuration
+            default_endpoint = "http://localhost:11434/api/generate"
+            default_model = "llama3.2:latest"
             self._llm_thread = LLMThread(
-                request_queue=self._llm_request_queue, endpoint=self.llm_model.endpoint, model=self.llm_model.model
+                request_queue=self._llm_request_queue, endpoint=default_endpoint, model=default_model
             )
 
             # Set up LLM thread callbacks
@@ -900,11 +906,8 @@ class MeetingBuddyPresenter(QObject):
                 self._cleanup_llm_thread()
                 return False
 
-            # Start LLM model processing
-            if not self.llm_model.start_processing():
-                self.logger.error("Failed to start LLM model processing")
-                self._cleanup_llm_thread()
-                return False
+            # LLM model no longer has start_processing method
+            # Processing is handled by the LLMThread
 
             self._llm_active = True
             self.llm_status_signal.emit("LLM processing started")
@@ -927,8 +930,8 @@ class MeetingBuddyPresenter(QObject):
             self.logger.info("Stopping LLM processing")
             self._llm_active = False
 
-            # Stop LLM model processing
-            self.llm_model.stop_processing()
+            # LLM model no longer has stop_processing method
+            # Processing is handled by the LLMThread
 
             # Clean up LLM thread
             self._cleanup_llm_thread()
@@ -946,7 +949,8 @@ class MeetingBuddyPresenter(QObject):
             # Stop LLM thread
             if self._llm_thread:
                 self.logger.debug("Stopping LLM thread")
-                self._llm_thread.stop_processing()
+                self._llm_thread._stop_event.set()
+                self._llm_thread._processing = False
                 self._llm_thread = None
 
             # Clear LLM request queue
@@ -1156,9 +1160,7 @@ class MeetingBuddyPresenter(QObject):
         """
         stats = {
             "llm_active": self._llm_active,
-            "llm_connected": self.llm_model.is_connected,
             "user_prompt": self.llm_model.user_prompt,
-            "current_response": self.llm_model.current_response,
         }
 
         if self._llm_thread:

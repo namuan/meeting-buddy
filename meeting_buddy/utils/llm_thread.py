@@ -4,7 +4,6 @@ This module contains the LLMThread class that handles
 non-blocking LLM API calls to Ollama for processing transcription data.
 """
 
-import json
 import logging
 import queue
 import threading
@@ -12,8 +11,7 @@ import time
 from datetime import datetime
 from typing import Callable, Optional
 
-import requests
-
+from ..models.llm_api_service import LLMApiService
 from ..models.llm_model import LLMRequest, LLMResponse
 
 
@@ -48,13 +46,13 @@ class LLMThread(threading.Thread):
 
         # Configuration
         self.request_queue = request_queue
-        self.endpoint = endpoint
-        self.model = model
         self.max_queue_size = max_queue_size
         self.processing_timeout = processing_timeout
-        self.api_timeout = api_timeout
-        self.max_retries = 3
-        self.retry_delay = 1.0
+
+        # Initialize API service
+        self.api_service = LLMApiService(
+            endpoint=endpoint, model=model, api_timeout=api_timeout, max_retries=3, retry_delay=1.0
+        )
 
         # Processing state
         self._processing = False
@@ -62,9 +60,7 @@ class LLMThread(threading.Thread):
         self._processing_lock = threading.RLock()  # Reentrant lock for thread safety
         self._cleanup_lock = threading.Lock()  # Lock for cleanup operations
 
-        # Connection state
-        self._is_connected = False
-        self._last_connection_check: Optional[datetime] = None
+        # Connection check interval for periodic checks
         self._connection_check_interval = 60.0  # Check connection every 60 seconds
 
         # Statistics
@@ -86,7 +82,7 @@ class LLMThread(threading.Thread):
         self._connection_status_callback: Optional[Callable[[bool], None]] = None
 
         # Check initial connection
-        self._check_connection()
+        self.api_service.check_connection()
 
         self.logger.info(f"LLMThread initialized with endpoint: {endpoint}, model: {model}")
         self.logger.debug(
@@ -95,41 +91,27 @@ class LLMThread(threading.Thread):
         )
 
     def _check_connection(self) -> bool:
-        """Check connection to Ollama API.
+        """Check connection to Ollama API using the API service.
 
         Returns:
             True if connection is successful, False otherwise
         """
-        try:
-            # Simple health check - try to get model info
-            health_url = self.endpoint.replace("/api/generate", "/api/tags")
-            response = requests.get(health_url, timeout=5.0)
-            response.raise_for_status()
+        is_connected = self.api_service.check_connection()
 
-            self._is_connected = True
-            self._last_connection_check = datetime.now()
-
-            if not self._processing:  # Only log during initial check
+        if not self._processing:  # Only log during initial check
+            if is_connected:
                 self.logger.info("Successfully connected to Ollama API")
+            else:
+                self.logger.error("Failed to connect to Ollama API")
 
-            if self._connection_status_callback:
-                self._connection_status_callback(True)
+        # Notify callbacks
+        if self._connection_status_callback:
+            self._connection_status_callback(is_connected)
 
-            return True
+        if not is_connected and self._error_callback:
+            self._error_callback(Exception("Failed to connect to Ollama API"))
 
-        except Exception as e:
-            self._is_connected = False
-            error_msg = f"Failed to connect to Ollama API: {e}"
-
-            if not self._processing:  # Only log during initial check
-                self.logger.exception("Failed to connect to Ollama API")
-
-            if self._connection_status_callback:
-                self._connection_status_callback(False)
-            if self._error_callback:
-                self._error_callback(Exception(error_msg))
-
-            return False
+        return is_connected
 
     def set_response_callback(self, callback: Callable[[LLMResponse], None]) -> None:
         """Set callback function for complete LLM responses.
@@ -184,7 +166,7 @@ class LLMThread(threading.Thread):
     @property
     def is_connected(self) -> bool:
         """Check if connected to Ollama API."""
-        return self._is_connected
+        return self.api_service.is_connected
 
     @property
     def requests_processed(self) -> int:
@@ -220,7 +202,7 @@ class LLMThread(threading.Thread):
             True if processing started successfully, False otherwise
         """
         with self._processing_lock:
-            if not self._is_connected:
+            if not self.api_service.is_connected:
                 self.logger.error("Cannot start processing: No connection to Ollama API")
                 return False
 
@@ -326,8 +308,9 @@ class LLMThread(threading.Thread):
     def _periodic_connection_check(self) -> None:
         """Perform periodic connection checks."""
         if (
-            self._last_connection_check is None
-            or (datetime.now() - self._last_connection_check).total_seconds() > self._connection_check_interval
+            self.api_service.last_connection_check is None
+            or (datetime.now() - self.api_service.last_connection_check).total_seconds()
+            > self._connection_check_interval
         ):
             self._check_connection()
 
@@ -341,43 +324,28 @@ class LLMThread(threading.Thread):
             return
 
         start_time = time.time()
-        retry_count = 0
 
-        while retry_count <= self.max_retries and not self._stop_event.is_set():
-            try:
-                self._log_request_processing_start(request, retry_count)
+        try:
+            self._log_request_processing_start(request, 0)
 
-                # Perform LLM API call
-                response_text = self._make_llm_api_call(request)
+            # Perform LLM API call using the API service (retries handled internally)
+            response_text = self._make_llm_api_call_with_streaming(request)
 
-                if response_text:
-                    self._handle_successful_response(request, response_text, start_time)
-                    return
-                else:
-                    self._handle_empty_response(request)
-                    return
+            if response_text:
+                self._handle_successful_response(request, response_text, start_time)
+            else:
+                self._handle_empty_response(request)
 
-            except requests.exceptions.RequestException as e:
-                retry_count += 1
-                if retry_count <= self.max_retries:
-                    self.logger.warning(
-                        f"LLM API request failed (attempt {retry_count}/{self.max_retries}): {e}. Retrying in {self.retry_delay}s..."
-                    )
-                    time.sleep(self.retry_delay)
-                else:
-                    self._handle_failed_request(request, e, start_time)
-                    return
-            except Exception as e:
-                self._handle_failed_request(request, e, start_time)
-                return
+        except Exception as e:
+            self._handle_failed_request(request, e, start_time)
 
     def _log_request_processing_start(self, request: LLMRequest, retry_count: int) -> None:
         """Log the start of request processing."""
         retry_info = f" (retry {retry_count})" if retry_count > 0 else ""
         self.logger.debug(f"Processing LLM request{retry_info}: prompt_len={len(request.full_prompt)}")
 
-    def _make_llm_api_call(self, request: LLMRequest) -> str:
-        """Make the actual LLM API call.
+    def _make_llm_api_call_with_streaming(self, request: LLMRequest) -> str:
+        """Make LLM API call with streaming using the API service.
 
         Args:
             request: LLMRequest to process
@@ -385,40 +353,18 @@ class LLMThread(threading.Thread):
         Returns:
             Complete response text from the API
         """
-        # Prepare API payload
-        payload = {"model": self.model, "prompt": request.full_prompt, "stream": True}
-        headers = {"Content-Type": "application/json"}
-
-        self.logger.debug(f"Making LLM API call: model={self.model}, prompt_len={len(request.full_prompt)}")
-
         complete_response = ""
 
-        # Make streaming API call
-        with requests.post(
-            self.endpoint, json=payload, headers=headers, stream=True, timeout=self.api_timeout
-        ) as response:
-            response.raise_for_status()
+        # Use the API service for streaming request
+        for response_chunk in self.api_service.make_streaming_request_with_retries(request):
+            if self._stop_event.is_set():
+                break
 
-            for line in response.iter_lines():
-                if line and not self._stop_event.is_set():
-                    try:
-                        decoded_line = line.decode("utf-8")
-                        data = json.loads(decoded_line)
-                        response_chunk = data.get("response", "")
+            complete_response += response_chunk
 
-                        if response_chunk:
-                            complete_response += response_chunk
-
-                            # Call chunk callback
-                            if self._response_chunk_callback:
-                                self._response_chunk_callback(response_chunk)
-
-                        if data.get("done", False):
-                            break
-
-                    except json.JSONDecodeError as e:
-                        self.logger.warning(f"Failed to parse JSON response line: {e}")
-                        continue
+            # Call chunk callback
+            if self._response_chunk_callback:
+                self._response_chunk_callback(response_chunk)
 
         return complete_response.strip()
 
@@ -580,9 +526,9 @@ class LLMThread(threading.Thread):
         """
         return {
             "is_processing": self._processing,
-            "is_connected": self._is_connected,
-            "endpoint": self.endpoint,
-            "model": self.model,
+            "is_connected": self.api_service.is_connected,
+            "endpoint": self.api_service.endpoint,
+            "model": self.api_service.model,
             "requests_processed": self._requests_processed,
             "successful_requests": self._successful_requests,
             "failed_requests": self._failed_requests,
@@ -591,7 +537,9 @@ class LLMThread(threading.Thread):
             "last_processing_time": self._last_processing_time,
             "total_processing_time": self._total_processing_time,
             "success_rate": self._successful_requests / max(self._requests_processed, 1),
-            "last_connection_check": self._last_connection_check.isoformat() if self._last_connection_check else None,
+            "last_connection_check": self.api_service.last_connection_check.isoformat()
+            if self.api_service.last_connection_check
+            else None,
         }
 
     def cleanup(self) -> None:

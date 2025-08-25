@@ -14,6 +14,7 @@ import numpy as np
 import pyaudio
 
 from ..models.audio_device_model import AudioDeviceInfo
+from ..models.transcription_data import AudioChunk
 from ..models.transcription_model import TranscriptionModel
 
 
@@ -262,7 +263,8 @@ class AudioRecorderThread(threading.Thread):
             # Send to transcription model if available
             if self.transcription_model:
                 self.logger.debug(f"Sending chunk to transcription model: {len(audio_float32)} samples")
-                self.transcription_model.add_audio_chunk(audio_float32, self.sample_rate)
+                audio_chunk = AudioChunk(audio_float32, self._chunk_start_time, self.sample_rate)
+                self.transcription_model.add_audio_chunk(audio_chunk)
             else:
                 self.logger.debug("No transcription model available, skipping transcription")
 

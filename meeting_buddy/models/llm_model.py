@@ -4,15 +4,9 @@ This module contains the LLMModel class that handles
 LLM API communication with Ollama for processing transcription data.
 """
 
-import json
 import logging
-import queue
-import threading
-import time
 from datetime import datetime
 from typing import Callable, Optional
-
-import requests
 
 
 class LLMRequest:
@@ -67,52 +61,33 @@ class LLMResponse:
 
 
 class LLMModel:
-    """Model class for managing LLM API communication with Ollama.
+    """Model class for managing LLM data.
 
-    This class handles LLM requests, streaming responses,
-    and integration with transcription data.
+    This class handles LLM request and response data storage.
+    Heavy processing (API calls) is handled by LLMThread in utils.
     """
 
-    def __init__(self, endpoint: str = "http://localhost:11434/api/generate", model: str = "llama3.2:latest"):
+    def __init__(self):
         """Initialize the LLMModel.
 
-        Args:
-            endpoint: Ollama API endpoint URL
-            model: Model name to use for generation
+        Note: Heavy processing (API calls) is handled by LLMThread.
+        This model only manages LLM data and state.
         """
         self.logger = logging.getLogger(__name__)
 
-        # Configuration
-        self.endpoint = endpoint
-        self.model = model
-        self.timeout = 30.0
-        self.max_retries = 3
-
-        # Request management
+        # Request and response management
         self._requests: list[LLMRequest] = []
         self._responses: list[LLMResponse] = []
         self._current_response: str = ""
         self._user_prompt: str = ""
 
-        # Processing state
-        self._is_processing: bool = False
-        self._processing_thread: Optional[threading.Thread] = None
-        self._request_queue: queue.Queue = queue.Queue()
-        self._stop_processing: threading.Event = threading.Event()
-
-        # Connection state
-        self._is_connected: bool = False
-        self._last_connection_check: Optional[datetime] = None
-
-        # Callbacks
+        # Callbacks for state change notifications
         self._response_callback: Optional[Callable[[str], None]] = None
         self._response_chunk_callback: Optional[Callable[[str], None]] = None
         self._error_callback: Optional[Callable[[str], None]] = None
         self._connection_status_callback: Optional[Callable[[bool], None]] = None
 
-        self.logger.debug(
-            f"LLM model initialized: endpoint={self.endpoint}, model={self.model}, timeout={self.timeout}s"
-        )
+        self.logger.info("LLMModel initialized (data container only)")
 
     @property
     def requests(self) -> list[LLMRequest]:
@@ -135,14 +110,14 @@ class LLMModel:
         return self._user_prompt
 
     @property
-    def is_processing(self) -> bool:
-        """Check if currently processing requests."""
-        return self._is_processing
+    def request_count(self) -> int:
+        """Get the number of requests stored."""
+        return len(self._requests)
 
     @property
-    def is_connected(self) -> bool:
-        """Check if connected to Ollama API."""
-        return self._is_connected
+    def response_count(self) -> int:
+        """Get the number of responses stored."""
+        return len(self._responses)
 
     def set_user_prompt(self, prompt: str) -> None:
         """Set the user prompt for LLM processing.
@@ -192,300 +167,121 @@ class LLMModel:
         self._connection_status_callback = callback
         self.logger.debug("Connection status callback set")
 
-    def check_connection(self) -> bool:
-        """Check connection to Ollama API.
-
-        Returns:
-            True if connection is successful, False otherwise
-        """
-        try:
-            # Simple health check - try to get model info
-            health_url = self.endpoint.replace("/api/generate", "/api/tags")
-            response = requests.get(health_url, timeout=5.0)
-            response.raise_for_status()
-
-            self._is_connected = True
-            self._last_connection_check = datetime.now()
-
-            self.logger.info("Successfully connected to Ollama API")
-
-            if self._connection_status_callback:
-                self._connection_status_callback(True)
-
-            return True
-
-        except Exception as e:
-            self._is_connected = False
-            error_msg = f"Failed to connect to Ollama API: {e}"
-            self.logger.exception("Failed to connect to Ollama API")
-
-            if self._connection_status_callback:
-                self._connection_status_callback(False)
-            if self._error_callback:
-                self._error_callback(error_msg)
-
-            return False
-
-    def process_transcription(self, transcription_text: str) -> bool:
-        """Process transcription text with LLM.
+    def add_request(self, request: LLMRequest) -> None:
+        """Add an LLM request to storage.
 
         Args:
-            transcription_text: Text from transcription to process
-
-        Returns:
-            True if request was queued successfully, False otherwise
+            request: LLMRequest to store
         """
-        if not self._user_prompt.strip():
-            self.logger.warning("No user prompt set, skipping LLM processing")
-            return False
-
-        if not transcription_text.strip():
-            self.logger.debug("Empty transcription text, skipping LLM processing")
-            return False
-
-        # Create LLM request
-        request = LLMRequest(self._user_prompt, transcription_text, datetime.now())
         self._requests.append(request)
-
-        self.logger.info(
-            f"Created LLM request: prompt_len={len(self._user_prompt)}, transcription_len={len(transcription_text)}"
-        )
-
-        # Add to processing queue if processing is active
-        if self._is_processing:
-            try:
-                self._request_queue.put(request)
-                self.logger.debug(f"Added request to processing queue: queue size = {self._request_queue.qsize()}")
-                return True
-            except Exception:
-                self.logger.exception("Failed to add request to processing queue")
-                return False
-        else:
-            self.logger.debug("Processing not active, request stored but not queued")
-            return False
-
-    def start_processing(self) -> bool:
-        """Start background processing of LLM requests.
-
-        Returns:
-            True if processing started successfully, False otherwise
-        """
-        if not self.check_connection():
-            self.logger.error("Cannot start processing: No connection to Ollama API")
-            return False
-
-        if self._is_processing:
-            self.logger.warning("Processing already active")
-            return True
-
-        self._is_processing = True
-        self._stop_processing.clear()
-
-        self._processing_thread = threading.Thread(target=self._processing_worker, daemon=True)
-        self._processing_thread.start()
-
-        self.logger.info("Started LLM processing")
         self.logger.debug(
-            f"Processing thread started: thread_id={self._processing_thread.ident}, daemon={self._processing_thread.daemon}"
+            f"LLM request added: prompt_len={len(request.prompt)}, transcription_len={len(request.transcription_text)}"
         )
-        return True
 
-    def stop_processing(self) -> None:
-        """Stop background processing of LLM requests."""
-        if not self._is_processing:
-            self.logger.debug("Processing not active")
-            return
-
-        self._stop_processing.set()
-        self._is_processing = False
-
-        if self._processing_thread and self._processing_thread.is_alive():
-            self._processing_thread.join(timeout=5.0)
-
-        self.logger.info("Stopped LLM processing")
-
-    def _processing_worker(self) -> None:
-        """Background worker thread for processing LLM requests."""
-        self.logger.debug("LLM processing worker started")
-        processed_count = 0
-        start_time = time.time()
-
-        while not self._stop_processing.is_set():
-            try:
-                # Get request from queue with timeout
-                queue_wait_start = time.time()
-                request = self._request_queue.get(timeout=1.0)
-                queue_wait_time = time.time() - queue_wait_start
-
-                self.logger.debug(
-                    f"Retrieved request from queue: wait_time={queue_wait_time:.3f}s, queue_size={self._request_queue.qsize()}"
-                )
-
-                self._process_request(request)
-                self._request_queue.task_done()
-                processed_count += 1
-
-                # Log processing statistics every 5 requests
-                if processed_count % 5 == 0:
-                    elapsed_time = time.time() - start_time
-                    avg_processing_time = elapsed_time / processed_count if processed_count > 0 else 0
-                    self.logger.debug(
-                        f"LLM processing statistics: {processed_count} requests processed, avg_time={avg_processing_time:.3f}s/request"
-                    )
-            except queue.Empty:
-                continue
-            except Exception:
-                self.logger.exception("Error in LLM processing worker")
-
-        total_time = time.time() - start_time
-        self.logger.info(f"LLM processing worker stopped: processed {processed_count} requests in {total_time:.2f}s")
-        if processed_count > 0:
-            self.logger.debug(f"Final LLM processing statistics: avg_time={total_time / processed_count:.3f}s/request")
-
-    def _process_request(self, request: LLMRequest) -> None:
-        """Process a single LLM request.
+    def add_response(self, response: LLMResponse) -> None:
+        """Add an LLM response to storage.
 
         Args:
-            request: LLMRequest to process
+            response: LLMResponse to store
         """
-        if request.processed:
-            return
+        self._responses.append(response)
 
-        try:
-            processing_start = time.time()
-            complete_response = self._make_api_request(request)
-            processing_time = time.time() - processing_start
+        # Update current response if this is a complete response
+        if response.is_complete:
+            self._current_response = response.text
 
-            if complete_response.strip():
-                self._handle_successful_request(request, complete_response, processing_time)
-            else:
-                self._handle_empty_request(request)
+        self.logger.debug(f"LLM response added: text_len={len(response.text)}, complete={response.is_complete}")
 
-        except requests.exceptions.RequestException as e:
-            self._handle_request_exception(request, e, "LLM API request failed")
-        except Exception as e:
-            self._handle_request_exception(request, e, "Error processing LLM request")
+        # Notify observers
+        if response.is_complete and self._response_callback:
+            self._response_callback(response.text)
+        if self._response_chunk_callback:
+            self._response_chunk_callback(response.text)
 
-    def _make_api_request(self, request: LLMRequest) -> str:
-        """Make the API request and return the complete response.
+    def update_current_response(self, response_text: str) -> None:
+        """Update the current response text.
 
         Args:
-            request: LLMRequest to process
-
-        Returns:
-            Complete response text
+            response_text: New response text
         """
-        # Prepare API payload
-        payload = {"model": self.model, "prompt": request.full_prompt, "stream": True}
-        headers = {"Content-Type": "application/json"}
+        self._current_response = response_text
+        self.logger.debug(f"Current response updated: length={len(response_text)}")
 
-        self.logger.debug(f"Making LLM API call: model={self.model}, prompt_len={len(request.full_prompt)}")
-
-        complete_response = ""
-
-        # Make streaming API call
-        with requests.post(self.endpoint, json=payload, headers=headers, stream=True, timeout=self.timeout) as response:
-            response.raise_for_status()
-
-            for line in response.iter_lines():
-                if line and not self._stop_processing.is_set():
-                    try:
-                        decoded_line = line.decode("utf-8")
-                        data = json.loads(decoded_line)
-                        response_chunk = data.get("response", "")
-
-                        if response_chunk:
-                            complete_response += response_chunk
-
-                            # Call chunk callback
-                            if self._response_chunk_callback:
-                                self._response_chunk_callback(response_chunk)
-
-                        if data.get("done", False):
-                            break
-
-                    except json.JSONDecodeError as e:
-                        self.logger.warning(f"Failed to parse JSON response line: {e}")
-                        continue
-
-        return complete_response
-
-    def _handle_successful_request(self, request: LLMRequest, complete_response: str, processing_time: float) -> None:
-        """Handle a successful LLM request.
-
-        Args:
-            request: The original request
-            complete_response: The complete response text
-            processing_time: Time taken to process
-        """
-        # Create response object
-        llm_response = LLMResponse(text=complete_response.strip(), timestamp=datetime.now(), is_complete=True)
-
-        # Update request and add response
-        request.processed = True
-        request.response_text = complete_response.strip()
-        self._responses.append(llm_response)
-
-        # Update current response
-        self._current_response = complete_response.strip()
-
-        self.logger.info(f"LLM response received: length={len(complete_response)} chars, time={processing_time:.2f}s")
-
-        # Log response statistics
-        response_stats = {
-            "processing_time_s": processing_time,
-            "response_length": len(complete_response),
-            "prompt_length": len(request.full_prompt),
-            "total_responses": len(self._responses),
-        }
-        self.logger.debug(f"LLM response statistics: {response_stats}")
-
-        # Call response callback
+        # Notify observers
         if self._response_callback:
-            self.logger.debug("Calling LLM response callback")
             self._response_callback(self._current_response)
-        else:
-            self.logger.debug("No LLM response callback set")
 
-    def _handle_empty_request(self, request: LLMRequest) -> None:
-        """Handle an empty LLM response.
+    def append_response_chunk(self, chunk: str) -> None:
+        """Append a chunk to the current response.
 
         Args:
-            request: The original request
+            chunk: Response chunk to append
         """
-        self.logger.warning("Received empty response from LLM API")
-        request.error_message = "Empty response received"
+        self._current_response += chunk
+        self.logger.debug(f"Response chunk appended: chunk_len={len(chunk)}, total_len={len(self._current_response)}")
 
-    def _handle_request_exception(self, request: LLMRequest, error: Exception, log_message: str) -> None:
-        """Handle exceptions during request processing.
-
-        Args:
-            request: The original request
-            error: The exception that occurred
-            log_message: Message to log
-        """
-        error_msg = f"{log_message}: {error}"
-        self.logger.exception(log_message)
-        request.error_message = error_msg
-
-        if self._error_callback:
-            self._error_callback(error_msg)
+        # Notify observers
+        if self._response_chunk_callback:
+            self._response_chunk_callback(chunk)
 
     def clear_responses(self) -> None:
-        """Clear all LLM responses and requests."""
-        self._requests.clear()
+        """Clear all response data."""
         self._responses.clear()
         self._current_response = ""
+        self.logger.info("Cleared all LLM response data")
 
-        # Clear queue
-        while not self._request_queue.empty():
-            try:
-                self._request_queue.get_nowait()
-                self._request_queue.task_done()
-            except queue.Empty:
-                break
+    def clear_requests(self) -> None:
+        """Clear all request data."""
+        self._requests.clear()
+        self.logger.info("Cleared all LLM request data")
 
+    def clear_all(self) -> None:
+        """Clear all LLM data."""
+        self.clear_requests()
+        self.clear_responses()
         self.logger.info("Cleared all LLM data")
+
+    def get_recent_requests(self, count: int = 10) -> list[LLMRequest]:
+        """Get the most recent requests.
+
+        Args:
+            count: Number of recent requests to return
+
+        Returns:
+            List of recent LLMRequest objects
+        """
+        return self._requests[-count:] if len(self._requests) >= count else self._requests.copy()
+
+    def get_recent_responses(self, count: int = 10) -> list[LLMResponse]:
+        """Get the most recent responses.
+
+        Args:
+            count: Number of recent responses to return
+
+        Returns:
+            List of recent LLMResponse objects
+        """
+        return self._responses[-count:] if len(self._responses) >= count else self._responses.copy()
+
+    def notify_connection_status(self, is_connected: bool) -> None:
+        """Notify observers of connection status change.
+
+        Args:
+            is_connected: Current connection status
+        """
+        self.logger.debug(f"Connection status updated: {is_connected}")
+        if self._connection_status_callback:
+            self._connection_status_callback(is_connected)
+
+    def notify_error(self, error_message: str) -> None:
+        """Notify observers of an error.
+
+        Args:
+            error_message: Error message to report
+        """
+        self.logger.debug(f"Error notification: {error_message}")
+        if self._error_callback:
+            self._error_callback(error_message)
 
     def get_responses_by_timerange(self, start_time: datetime, end_time: datetime) -> list[LLMResponse]:
         """Get LLM responses within a time range.
@@ -529,6 +325,8 @@ class LLMModel:
             return "\n".join(lines)
 
         elif format_type == "json":
+            import json
+
             data = {
                 "conversation": [
                     {
@@ -546,10 +344,5 @@ class LLMModel:
 
     def cleanup(self) -> None:
         """Clean up resources."""
-        self.stop_processing()
-        self.clear_responses()
+        self.clear_all()
         self.logger.info("LLMModel cleanup completed")
-
-    def __del__(self):
-        """Destructor to ensure cleanup."""
-        self.cleanup()

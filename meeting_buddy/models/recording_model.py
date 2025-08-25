@@ -10,7 +10,8 @@ from typing import Optional
 
 import numpy as np
 
-from .transcription_model import AudioChunk, TranscriptionModel, TranscriptionResult
+from .transcription_data import AudioChunk, TranscriptionResult
+from .transcription_model import TranscriptionModel
 
 
 class RecordingInfo:
@@ -79,7 +80,7 @@ class RecordingModel:
         try:
             # Create a transcription model that acts as a data container; real-time transcription is handled
             # by AudioTranscriberThread to avoid duplicate Whisper model loading.
-            self._transcription_model = TranscriptionModel(use_whisper=False)
+            self._transcription_model = TranscriptionModel()
             # Enable transcription if the container is available
             self._transcription_enabled = self._transcription_model is not None
 
@@ -166,10 +167,8 @@ class RecordingModel:
         self._is_recording = True
         self._current_transcription = ""
 
-        # Start transcription processing if enabled
-        if self._transcription_enabled and self._transcription_model:
-            self._transcription_model.start_processing()
-            self.logger.debug("Started transcription processing")
+        # Transcription processing is now handled by AudioTranscriberThread in the presenter
+        # The model only stores data
 
         self.logger.info(f"Started recording: {self._current_recording}")
         return self._current_recording
@@ -184,9 +183,8 @@ class RecordingModel:
             self.logger.warning("No active recording to stop")
             return None
 
-        # Stop transcription processing if enabled
-        if self._transcription_enabled and self._transcription_model:
-            self._transcription_model.stop_processing()
+            # Transcription processing is handled by AudioTranscriberThread in the presenter
+            # The model only manages data
             self.logger.debug("Stopped transcription processing")
 
         # Finalize recording
@@ -381,7 +379,7 @@ class RecordingModel:
         Returns:
             True if transcription was enabled, False otherwise
         """
-        if self._transcription_model and self._transcription_model.model_loaded:
+        if self._transcription_model:  # Model exists, processing is handled by AudioTranscriberThread
             self._transcription_enabled = True
             self.logger.info("Transcription enabled")
             return True
@@ -392,8 +390,7 @@ class RecordingModel:
     def disable_transcription(self) -> None:
         """Disable transcription."""
         self._transcription_enabled = False
-        if self._transcription_model:
-            self._transcription_model.stop_processing()
+        # Transcription processing cleanup is handled by the presenter
         self.logger.info("Transcription disabled")
 
     def cleanup(self) -> None:
