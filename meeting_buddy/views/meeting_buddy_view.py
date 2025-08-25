@@ -180,6 +180,32 @@ class MeetingBuddyView(QMainWindow):
             QComboBox::drop-down {
                 border: none;
             }
+            QComboBox QAbstractItemView {
+                background-color: white;
+                border: 1px solid #cccccc;
+                color: #000000;
+            }
+            QComboBox QAbstractItemView::item {
+                padding: 6px 12px;
+                color: #000000;
+                background-color: transparent;
+            }
+            QComboBox QAbstractItemView::item:hover {
+                background-color: #0078d4 !important;
+                color: white !important;
+            }
+            QComboBox QAbstractItemView::item:selected {
+                background-color: #106ebe !important;
+                color: white !important;
+            }
+            QComboBox::item {
+                color: #000000;
+                background-color: white;
+            }
+            QComboBox::item:selected {
+                background-color: #0078d4;
+                color: white;
+            }
             QPushButton {
                 background-color: white;
                 border: 1px solid #bbbbbb;
@@ -231,11 +257,12 @@ class MeetingBuddyView(QMainWindow):
             self.on_prompt_changed(prompt_text)
 
     # Public methods for updating UI from presenter
-    def populate_input_devices(self, devices: list[str]) -> None:
+    def populate_input_devices(self, devices: list[str], selected_index: int = 0) -> None:
         """Populate the input device combo box.
 
         Args:
             devices: List of device display names
+            selected_index: Index of the device to select (default: 0)
         """
         if self.input_device_combo is None:
             self.logger.error("input_device_combo is None!")
@@ -249,6 +276,11 @@ class MeetingBuddyView(QMainWindow):
 
         for device in devices:
             self.input_device_combo.addItem(device)
+
+        # Set the selected device
+        if 0 <= selected_index < len(devices):
+            self.input_device_combo.setCurrentIndex(selected_index)
+            self.logger.debug(f"Set selected device index to: {selected_index}")
 
         self.logger.debug(f"Populated {len(devices)} input devices")
 

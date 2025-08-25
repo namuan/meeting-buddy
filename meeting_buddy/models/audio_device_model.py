@@ -5,6 +5,7 @@ audio device detection, enumeration, and management.
 """
 
 import logging
+import re
 from typing import Optional
 
 import pyaudio
@@ -75,9 +76,19 @@ class AudioDeviceModel:
 
         self.logger.info(f"Device refresh complete: {len(self._input_devices)} input devices")
 
-        # Auto-select first available device if none selected
+        # Log all available input devices for debugging
+        for i, device in enumerate(self._input_devices):
+            self.logger.debug(f"Input device {i}: '{device.name}' ({device.channels} channels)")
+
+        # Auto-select BlackHole device if available, otherwise first device
         if not self._selected_input_device and self._input_devices:
-            self.select_input_device(0)
+            blackhole_index = self._find_blackhole_device()
+            if blackhole_index is not None:
+                self.logger.info(f"Found BlackHole device at index {blackhole_index}, selecting automatically")
+                self.select_input_device(blackhole_index)
+            else:
+                self.logger.info("No BlackHole device found, selecting first available device")
+                self.select_input_device(0)
 
     def _process_device_info(self, device_info: dict, index: int) -> None:
         """Process a single device info dictionary."""
@@ -98,6 +109,27 @@ class AudioDeviceModel:
             )
             self._input_devices.append(input_device)
             self.logger.debug(f"Added input device: {input_device}")
+
+    def _find_blackhole_device(self) -> Optional[int]:
+        """Find the index of a BlackHole device in the input devices list.
+
+        Returns:
+            Index of the first BlackHole device found, or None if not found
+        """
+        # Regex pattern to match various BlackHole naming conventions
+        # Matches: blackhole, black hole, black-hole, blackhol, etc.
+        blackhole_pattern = re.compile(r"black[\s\-_]*hol[e]?", re.IGNORECASE)
+
+        for i, device in enumerate(self._input_devices):
+            device_name = device.name.strip()
+            self.logger.debug(f"Checking device: '{device.name}' against BlackHole pattern")
+
+            if blackhole_pattern.search(device_name):
+                self.logger.info(f"Found BlackHole device: '{device.name}' at index {i} (matched regex pattern)")
+                return i
+
+        self.logger.debug("No BlackHole device found in available input devices")
+        return None
 
     @property
     def input_devices(self) -> list[AudioDeviceInfo]:

@@ -333,9 +333,18 @@ class MeetingBuddyPresenter(QObject):
         """Update device combo boxes with current device lists."""
         # Update input devices
         input_devices = [str(device) for device in self.audio_model.input_devices]
-        self.view.populate_input_devices(input_devices)
 
-        self.logger.debug("Device lists updated")
+        # Find the index of the currently selected device
+        selected_index = 0  # Default to first device
+        selected_device = self.audio_model.selected_input_device
+        if selected_device:
+            for i, device in enumerate(self.audio_model.input_devices):
+                if device.index == selected_device.index:
+                    selected_index = i
+                    break
+
+        self.view.populate_input_devices(input_devices, selected_index)
+        self.logger.debug(f"Device lists updated, selected index: {selected_index}")
 
     # Event handlers
     def _handle_input_device_changed(self, index: int) -> None:
