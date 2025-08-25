@@ -1,0 +1,5 @@
+- MUST Use Model View Presenter (MVP Architecture) for better separation of concerns
+- MUST Add extensive logging to help with debugging as this is a GUI application
+- MUST Run `make check` before starting any task to make sure there aren't any existing issues to resolve
+- Run `make run` to run the application
+- Use `uv add` to add any dependencies. Use `uv add --dev` if it is a dev dependency.

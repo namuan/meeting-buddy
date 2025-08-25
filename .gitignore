@@ -6,6 +6,7 @@ __pycache__/
 !meeting_buddy/
 !assets/
 !scripts/
+!.trae/
 
 # unignore files
 !.gitignore
@@ -18,4 +19,5 @@ __pycache__/
 !LICENSE
 !tox.ini
 !main.spec
-!entitlements.plist
+!QWEN.md
+!example*.py

@@ -1,0 +1,1 @@
+/Users/nnn/workspace/meeting-buddy/.trae/rules/project_rules.md

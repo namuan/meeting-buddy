@@ -28,7 +28,7 @@ clean-build: ## Clean build artifacts
 	@echo "🚀 Removing build artifacts"
 	@uv run python -c "import shutil; import os; shutil.rmtree('dist') if os.path.exists('dist') else None"
 
-ICON_PNG ?= assets/fr-logo.png
+ICON_PNG ?= assets/mb-logo.png
 
 icons: ## Generate ICNS and ICO files from the PNG logo
 	@bash assets/generate-icons.sh $(ICON_PNG)
