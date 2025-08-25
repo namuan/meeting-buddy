@@ -4,7 +4,7 @@ from PyInstaller.utils.hooks import collect_data_files
 
 block_cipher = None
 
-a = Analysis(['focused_reminder/main.py'],
+a = Analysis(['meeting_buddy/main.py'],
              pathex=['.'],
              binaries=None,
              hiddenimports=[],
@@ -32,14 +32,14 @@ coll = COLLECT(exe,
                a.datas,
                strip=False,
                upx=True,
-               name='FocusedReminder')
+               name='MeetingBuddy')
 
 app = BUNDLE(coll,
-             name='FocusedReminder.app',
+             name='MeetingBuddy.app',
              icon='assets/icon.icns',
-             bundle_identifier='com.github.namuan.focusedreminder',
+             bundle_identifier='com.github.namuan.meetingbuddy',
              info_plist={
-                'CFBundleName': 'Focused Reminder',
+                'CFBundleName': 'Meeting Buddy',
                 'CFBundleVersion': '1.0.0',
                 'CFBundleShortVersionString': '1.0.0',
                 'NSPrincipalClass': 'NSApplication',

@@ -1,10 +1,10 @@
 [project]
-name = "focused-reminder"
+name = "meeting-buddy"
 version = "0.0.1"
-description = "Focused reminder application with visual borders and countdown timer"
+description = "Meeting Buddy application"
 authors = [{ name = "Namuan", email = "namuan@deskriders.dev" }]
 readme = "README.md"
-keywords = ['python', 'reminders', 'productivity']
+keywords = ['python', 'meetings', 'productivity']
 requires-python = ">=3.9,<4.0"
 classifiers = [
     "Intended Audience :: Developers",
@@ -22,9 +22,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://namuan.github.io/focused-reminder/"
-Repository = "https://github.com/namuan/focused-reminder"
-Documentation = "https://namuan.github.io/focused-reminder/"
+Homepage = "https://namuan.github.io/meeting-buddy/"
+Repository = "https://github.com/namuan/meeting-buddy"
+Documentation = "https://namuan.github.io/meeting-buddy/"
 
 [tool.uv]
 dev-dependencies = [
@@ -40,7 +40,7 @@ requires = ["setuptools >= 61.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-py-modules = ["focused_reminder"]
+py-modules = ["meeting_buddy"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -101,4 +101,4 @@ ignore = [
 preview = true
 
 [project.scripts]
-focused-reminder = "focused_reminder:main"
+meeting-buddy = "meeting_buddy:main"

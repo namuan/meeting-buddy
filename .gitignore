@@ -3,7 +3,7 @@
 __pycache__/
 
 # unignore folders
-!focused_reminder/
+!meeting_buddy/
 !assets/
 !scripts/
 

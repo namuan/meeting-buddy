@@ -1,22 +1,17 @@
-# Focused Reminder
-
-A focused reminder application with visual borders and countdown timer that displays Apple Reminders data.
-
-![](assets/focused-reminder.png)
+# Meeting Buddy
 
 ## Installation and Running
 
 ### Prerequisites
 
 - Python 3.9 or higher
-- macOS (required for Apple Reminders integration)
 
 ### Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/namuan/focused-reminder.git
-cd focused-reminder
+git clone https://github.com/namuan/meeting-buddy.git
+cd meeting-buddy
 
 # Install dependencies using uv
 make install
@@ -29,7 +24,7 @@ make install
 make run
 
 # Or run using uv
-uv run focused-reminder
+uv run meeting-buddy
 ```
 
 ## Development

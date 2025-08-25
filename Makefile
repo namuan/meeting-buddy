@@ -16,7 +16,7 @@ check: ## Run code quality tools.
 .PHONY: run
 run: ## Run the application
 	@echo "🚀 Testing code: Running"
-	@uv run focused-reminder
+	@uv run meeting-buddy
 
 .PHONY: build
 build: clean-build ## Build wheel file
@@ -37,7 +37,7 @@ package: clean-build ## Run installer
 	uv run pyinstaller main.spec
 
 install-macosx: package ## Installs application in users Application folder
-	./scripts/install-macosx.sh FocusedReminder.app
+	./scripts/install-macosx.sh MeetingBuddy.app
 
 .PHONY: help
 help:
