@@ -133,11 +133,7 @@ To use LLM analysis features:
 For debugging issues, run with increased verbosity:
 
 ```bash
-# Info level logging
-make run -v
-
-# Debug level logging
-make run -vv
+uv run meeting-buddy -vv
 ```
 
 Logs will help identify issues with audio devices, transcription, or LLM connectivity.
