@@ -443,12 +443,16 @@ class MeetingBuddyPresenter(QObject):
             self.view.show_error_message("LLM Test", "Please enter a prompt before testing.")
             return
 
-        # Test with sample transcription
-        test_transcription = (
-            "This is a test meeting transcription. We discussed project goals, timeline, and next steps."
-        )
-
-        self.logger.info("Testing LLM with sample transcription")
+        # Use current full transcription if available, otherwise use sample
+        current_transcription = self.recording_model.current_transcription.strip()
+        if current_transcription:
+            test_transcription = current_transcription
+            self.logger.info(f"Testing LLM with current transcription ({len(current_transcription)} chars)")
+        else:
+            test_transcription = (
+                "This is a test meeting transcription. We discussed project goals, timeline, and next steps."
+            )
+            self.logger.info("Testing LLM with sample transcription (no current transcription available)")
         self.view.set_llm_response_status("Testing LLM...")
 
         try:
@@ -809,8 +813,9 @@ class MeetingBuddyPresenter(QObject):
             status_message = f"Transcribing... ({word_count} words, {char_count} chars)"
             self.transcription_status_signal.emit(status_message)
 
-            # Process with LLM if active and prompt is set
-            self._process_transcription_with_llm(text)
+            # Process with LLM if active and prompt is set - send full transcription for context
+            full_transcription = self.recording_model.current_transcription
+            self._process_transcription_with_llm(full_transcription)
 
             self.logger.debug(f"Transcription UI update completed for '{text}'")
 
