@@ -52,7 +52,7 @@ class MeetingBuddyView(QMainWindow):
 
     def _setup_ui(self) -> None:
         """Set up the user interface."""
-        self.setWindowTitle("Meeting Buddy - MVP Architecture")
+        self.setWindowTitle("Meeting Buddy")
         self.setGeometry(100, 100, 800, 700)  # Increased size for LLM integration
 
         # Set the main background color
