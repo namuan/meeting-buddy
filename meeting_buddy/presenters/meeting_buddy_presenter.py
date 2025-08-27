@@ -17,7 +17,9 @@ import numpy as np
 from PyQt6.QtCore import QObject, pyqtSignal
 
 from ..models.audio_device_model import AudioDeviceModel
+from ..models.configuration_model import ConfigurationModel
 from ..models.llm_model import LLMModel, LLMRequest
+from ..models.model_download_service import ModelDownloadProgress, ModelDownloadService
 from ..models.recording_model import RecordingModel
 from ..models.transcription_data import TranscriptionResult
 from ..utils.audio_recorder_thread import AudioRecorderThread
@@ -46,6 +48,11 @@ class MeetingBuddyPresenter(QObject):
     llm_error_signal = pyqtSignal(str)  # LLM error message
     llm_connection_status_signal = pyqtSignal(bool)  # LLM connection status
 
+    # Configuration-related signals
+    config_updated_signal = pyqtSignal()  # configuration was updated
+    model_download_progress_signal = pyqtSignal(str, float, str)  # model_name, progress, status
+    model_download_completed_signal = pyqtSignal(str, bool, str)  # model_name, success, message
+
     def __init__(self):
         """Initialize the MeetingBuddyPresenter."""
         super().__init__()
@@ -62,12 +69,23 @@ class MeetingBuddyPresenter(QObject):
         self.audio_model = AudioDeviceModel()
         self.recording_model = RecordingModel()
         self.llm_model = LLMModel()
+        self.config_model = ConfigurationModel()
+        self.download_service = ModelDownloadService()
 
         # Set up LLM model callbacks
         self.llm_model.set_response_callback(self._on_llm_model_response)
         self.llm_model.set_response_chunk_callback(self._on_llm_model_response_chunk)
         self.llm_model.set_error_callback(self._on_llm_model_error)
         self.llm_model.set_connection_status_callback(self._on_llm_model_connection_status)
+
+        # Set up configuration callbacks
+        self.config_model.add_config_changed_callback(self._on_config_changed)
+        self.config_model.add_whisper_model_changed_callback(self._on_whisper_model_changed)
+        self.config_model.add_ollama_model_changed_callback(self._on_ollama_model_changed)
+
+        # Set up download service callbacks
+        self.download_service.add_progress_callback(self._on_download_progress)
+        self.download_service.add_completion_callback(self._on_download_completed)
 
         # Initialize view
         self.view = MeetingBuddyView()
@@ -94,6 +112,9 @@ class MeetingBuddyPresenter(QObject):
         self.view.set_prompt_text(default_prompt)
         self.llm_model.set_user_prompt(default_prompt)
 
+        # Initialize configuration UI
+        self._initialize_config_ui()
+
         self.logger.info("MeetingBuddyPresenter initialized")
 
     def _connect_view_callbacks(self) -> None:
@@ -102,6 +123,8 @@ class MeetingBuddyPresenter(QObject):
         self.view.on_start_recording = self._handle_start_recording
         self.view.on_stop_recording = self._handle_stop_recording
         self.view.on_prompt_changed = self._handle_prompt_changed
+        self.view.on_whisper_model_changed = self._handle_whisper_model_changed
+        self.view.on_ollama_model_changed = self._handle_ollama_model_changed
 
         self.logger.debug("View callbacks connected")
 
@@ -118,7 +141,70 @@ class MeetingBuddyPresenter(QObject):
         self.llm_error_signal.connect(self._show_llm_error_ui)
         self.llm_connection_status_signal.connect(self._update_llm_connection_status_ui)
 
+        # Connect configuration signals
+        self.config_updated_signal.connect(self._update_config_ui)
+        self.model_download_progress_signal.connect(self._update_download_progress_ui)
+        self.model_download_completed_signal.connect(self._update_download_completed_ui)
+
+        # Connect view signals to download service
+        self.view.model_download_progress_updated.connect(self.view._on_download_progress_updated)
+        self.view.model_download_completed.connect(self.view._on_download_completed)
+        self.view.whisper_model_status_updated.connect(self.view._on_whisper_model_status_updated)
+        self.view.ollama_model_status_updated.connect(self.view._on_ollama_model_status_updated)
+
         self.logger.debug("Qt signals connected")
+
+    def _initialize_config_ui(self) -> None:
+        """Initialize the configuration UI with current settings."""
+        try:
+            # Populate Whisper models
+            available_models = self.config_model.available_whisper_models
+            current_whisper = self.config_model.whisper_model
+            self.view.populate_whisper_models(available_models, current_whisper)
+            self.view.update_current_whisper_model(current_whisper)
+
+            # Populate Ollama models (start with common models)
+            common_ollama_models = [
+                "llama3.2:latest",
+                "llama3.1:latest",
+                "llama3:latest",
+                "mistral:latest",
+                "codellama:latest",
+                "phi3:latest",
+            ]
+            current_ollama = self.config_model.ollama_model
+            self.view.populate_ollama_models(common_ollama_models, current_ollama)
+            self.view.update_current_ollama_model(current_ollama)
+
+            # Update LLM service with current configuration
+            self._update_llm_service_config()
+
+            self.logger.info("Configuration UI initialized successfully")
+
+        except Exception as e:
+            self.logger.exception("Error initializing configuration UI")
+            self.view.set_download_status(f"Error initializing configuration: {e}")
+
+    def _update_llm_service_config(self) -> None:
+        """Update LLM service with current configuration."""
+        try:
+            config = self.config_model.config_data
+
+            # Update LLM thread API service if it exists
+            if self._llm_thread and hasattr(self._llm_thread, "api_service"):
+                self._llm_thread.api_service.update_config(
+                    model=config.ollama_model,
+                    endpoint=config.ollama_endpoint,
+                    api_timeout=config.api_timeout,
+                    max_retries=config.max_retries,
+                    retry_delay=config.retry_delay,
+                )
+                self.logger.debug("LLM service configuration updated")
+            else:
+                self.logger.debug("LLM thread not available, configuration will be applied when thread is created")
+
+        except Exception:
+            self.logger.exception("Error updating LLM service configuration")
 
     def _create_temp_folder(self) -> None:
         """Create a temporary folder for storing audio files and transcription data."""
@@ -887,12 +973,17 @@ class MeetingBuddyPresenter(QObject):
             # Create LLM request queue
             self._llm_request_queue = queue.Queue(maxsize=20)
 
-            # Create and configure LLM thread with default configuration
-            default_endpoint = "http://localhost:11434/api/generate"
-            default_model = "llama3.2:latest"
+            # Create and configure LLM thread with current configuration
+            config = self.config_model.config_data
             self._llm_thread = LLMThread(
-                request_queue=self._llm_request_queue, endpoint=default_endpoint, model=default_model
+                request_queue=self._llm_request_queue,
+                endpoint=config.ollama_endpoint,
+                model=config.ollama_model,
+                api_timeout=config.api_timeout,
             )
+
+            # Update API service with additional configuration
+            self._llm_thread.api_service.update_config(max_retries=config.max_retries, retry_delay=config.retry_delay)
 
             # Set up LLM thread callbacks
             self._llm_thread.set_response_callback(self._on_llm_response)
@@ -1143,6 +1234,190 @@ class MeetingBuddyPresenter(QObject):
 
         return stats
 
+    # Configuration callback methods
+    def _on_config_changed(self, config_data) -> None:
+        """Handle configuration changes.
+
+        Args:
+            config_data: Updated configuration data
+        """
+        try:
+            self.logger.info("Configuration changed, updating services")
+
+            # Update LLM service configuration
+            self._update_llm_service_config()
+
+            # Emit signal for UI updates
+            self.config_updated_signal.emit()
+
+        except Exception:
+            self.logger.exception("Error handling configuration change")
+
+    def _on_whisper_model_changed(self, model_name: str) -> None:
+        """Handle Whisper model changes.
+
+        Args:
+            model_name: New Whisper model name
+        """
+        try:
+            self.logger.info(f"Whisper model changed to: {model_name}")
+
+            # Update transcriber thread if it exists and can be changed
+            if self._audio_transcriber_thread and self._audio_transcriber_thread.can_change_model():
+                success = self._audio_transcriber_thread.update_model_config(
+                    model_name=model_name, language=self.config_model.config_data.language
+                )
+                if success:
+                    self.logger.info(f"Transcriber updated to use model: {model_name}")
+                else:
+                    self.logger.warning(f"Failed to update transcriber model to: {model_name}")
+
+            # Update UI
+            self.view.emit_whisper_model_status_update(model_name)
+
+        except Exception:
+            self.logger.exception(f"Error handling Whisper model change to {model_name}")
+
+    def _on_ollama_model_changed(self, model_name: str) -> None:
+        """Handle Ollama model changes.
+
+        Args:
+            model_name: New Ollama model name
+        """
+        try:
+            self.logger.info(f"Ollama model changed to: {model_name}")
+
+            # Update LLM service if thread exists
+            if self._llm_thread and hasattr(self._llm_thread, "api_service"):
+                self._llm_thread.api_service.update_model(model_name)
+                self.logger.debug(f"LLM service model updated to: {model_name}")
+            else:
+                self.logger.debug(
+                    f"LLM thread not available, model {model_name} will be applied when thread is created"
+                )
+
+            # Update UI
+            self.view.emit_ollama_model_status_update(model_name)
+
+        except Exception:
+            self.logger.exception(f"Error handling Ollama model change to {model_name}")
+
+    def _on_download_progress(self, progress: ModelDownloadProgress) -> None:
+        """Handle model download progress updates.
+
+        Args:
+            progress: Download progress data
+        """
+        try:
+            # Emit signal for thread-safe UI update
+            self.model_download_progress_signal.emit(progress.model_name, progress.progress_percent, progress.status)
+
+        except Exception:
+            self.logger.exception("Error handling download progress update")
+
+    def _on_download_completed(self, model_name: str, success: bool, error_message: str) -> None:
+        """Handle model download completion.
+
+        Args:
+            model_name: Name of the downloaded model
+            success: Whether download was successful
+            error_message: Error message if failed
+        """
+        try:
+            # Emit signal for thread-safe UI update
+            self.model_download_completed_signal.emit(model_name, success, error_message or "")
+
+            if success:
+                self.logger.info(f"Model {model_name} downloaded successfully")
+            else:
+                self.logger.error(f"Model {model_name} download failed: {error_message}")
+
+        except Exception:
+            self.logger.exception("Error handling download completion")
+
+    # Configuration UI callback handlers
+    def _handle_whisper_model_changed(self, model_name: str) -> None:
+        """Handle Whisper model selection from UI.
+
+        Args:
+            model_name: Selected Whisper model name
+        """
+        try:
+            if model_name and model_name != self.config_model.whisper_model:
+                # Check if model is available locally
+                if not self.download_service.is_model_available(model_name):
+                    # Start download
+                    self.logger.info(f"Starting download for Whisper model: {model_name}")
+                    success = self.download_service.download_model(model_name)
+                    if not success:
+                        self.view.set_download_status(f"Failed to start download for {model_name}")
+                        return
+
+                # Update configuration
+                success = self.config_model.set_whisper_model(model_name)
+                if success:
+                    self.logger.info(f"Whisper model updated to: {model_name}")
+                else:
+                    self.logger.error(f"Failed to update Whisper model to: {model_name}")
+
+        except Exception:
+            self.logger.exception(f"Error handling Whisper model change from UI: {model_name}")
+
+    def _handle_ollama_model_changed(self, model_name: str) -> None:
+        """Handle Ollama model selection from UI.
+
+        Args:
+            model_name: Selected Ollama model name
+        """
+        try:
+            if model_name and model_name != self.config_model.ollama_model:
+                # Update configuration
+                success = self.config_model.set_ollama_model(model_name)
+                if success:
+                    self.logger.info(f"Ollama model updated to: {model_name}")
+                else:
+                    self.logger.error(f"Failed to update Ollama model to: {model_name}")
+
+        except Exception:
+            self.logger.exception(f"Error handling Ollama model change from UI: {model_name}")
+
+    # Configuration UI update methods (Qt slots)
+    def _update_config_ui(self) -> None:
+        """Update configuration UI elements."""
+        try:
+            config = self.config_model.config_data
+            self.view.update_current_whisper_model(config.whisper_model)
+            self.view.update_current_ollama_model(config.ollama_model)
+            self.logger.debug("Configuration UI updated")
+        except Exception:
+            self.logger.exception("Error updating configuration UI")
+
+    def _update_download_progress_ui(self, model_name: str, progress: float, status: str) -> None:
+        """Update download progress in UI.
+
+        Args:
+            model_name: Name of the model being downloaded
+            progress: Progress percentage
+            status: Download status
+        """
+        try:
+            self.view.emit_download_progress_update(model_name, progress, status)
+        except Exception:
+            self.logger.exception("Error updating download progress UI")
+
+    def _update_download_completed_ui(self, model_name: str, success: bool, message: str) -> None:
+        """Update UI when download completes.
+
+        Args:
+            model_name: Name of the downloaded model
+            success: Whether download was successful
+            message: Success or error message
+        """
+        try:
+            self.view.emit_download_completed(model_name, success, message)
+        except Exception:
+            self.logger.exception("Error updating download completion UI")
+
     # Public LLM control methods
     def is_llm_active(self) -> bool:
         """Check if LLM processing is currently active.
@@ -1203,6 +1478,12 @@ class MeetingBuddyPresenter(QObject):
             self.audio_model.cleanup()
             self.recording_model.cleanup()
             self.llm_model.cleanup()
+
+            # Clean up configuration services
+            if hasattr(self, "download_service"):
+                self.download_service.cleanup()
+            if hasattr(self, "config_model"):
+                self.config_model.save_configuration()
 
             # Clean up threads
             self._cleanup_transcription_threads()

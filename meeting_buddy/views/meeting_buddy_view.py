@@ -7,12 +7,14 @@ all UI components and user interface logic.
 import logging
 from typing import Callable, Optional
 
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPalette
 from PyQt6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QProgressBar,
     QPushButton,
     QSizePolicy,
     QTextEdit,
@@ -28,6 +30,12 @@ class MeetingBuddyView(QMainWindow):
     following the MVP (Model-View-Presenter) architecture pattern.
     """
 
+    # Qt signals for thread-safe UI updates
+    model_download_progress_updated = pyqtSignal(str, float, str)  # model_name, progress_percent, status
+    model_download_completed = pyqtSignal(str, bool, str)  # model_name, success, message
+    whisper_model_status_updated = pyqtSignal(str)  # current_model_name
+    ollama_model_status_updated = pyqtSignal(str)  # current_model_name
+
     def __init__(self):
         """Initialize the MeetingBuddyView."""
         super().__init__()
@@ -37,18 +45,34 @@ class MeetingBuddyView(QMainWindow):
         self.on_input_device_changed: Optional[Callable[[int], None]] = None
         self.on_start_recording: Optional[Callable[[], None]] = None
         self.on_stop_recording: Optional[Callable[[], None]] = None
-
+        self.on_whisper_model_changed: Optional[Callable[[str], None]] = None
+        self.on_ollama_model_changed: Optional[Callable[[str], None]] = None
         self.on_prompt_changed: Optional[Callable[[str], None]] = None
         # UI components
         self.input_device_combo: Optional[QComboBox] = None
         self.start_button: Optional[QPushButton] = None
         self.stop_button: Optional[QPushButton] = None
+        self.whisper_model_combo: Optional[QComboBox] = None
+        self.ollama_model_combo: Optional[QComboBox] = None
+        self.current_whisper_label: Optional[QLabel] = None
+        self.current_ollama_label: Optional[QLabel] = None
+        self.download_progress_bar: Optional[QProgressBar] = None
+        self.download_status_label: Optional[QLabel] = None
         self.prompt_input: Optional[QTextEdit] = None
         self.transcription_text: Optional[QTextEdit] = None
         self.llm_response_text: Optional[QTextEdit] = None
 
         self._setup_ui()
+        self._connect_signals()
         self.logger.info("MeetingBuddyView initialized")
+
+    def _connect_signals(self) -> None:
+        """Connect Qt signals to their respective slots."""
+        self.model_download_progress_updated.connect(self._on_download_progress_updated)
+        self.model_download_completed.connect(self._on_download_completed)
+        self.whisper_model_status_updated.connect(self._on_whisper_model_status_updated)
+        self.ollama_model_status_updated.connect(self._on_ollama_model_status_updated)
+        self.logger.debug("Qt signals connected")
 
     def _setup_ui(self) -> None:
         """Set up the user interface."""
@@ -70,6 +94,7 @@ class MeetingBuddyView(QMainWindow):
 
         # Create UI sections
         self._create_device_selection_section(main_layout)
+        self._create_configuration_section(main_layout)
         self._create_prompt_section(main_layout)
         self._create_transcription_section(main_layout)
         self._create_llm_response_section(main_layout)
@@ -105,6 +130,80 @@ class MeetingBuddyView(QMainWindow):
         input_layout.addWidget(self.start_button)
         input_layout.addWidget(self.stop_button)
         main_layout.addLayout(input_layout)
+
+    def _create_configuration_section(self, main_layout: QVBoxLayout) -> None:
+        """Create the configuration section for model selection and status display."""
+        # Configuration section label
+        config_label = QLabel("Model Configuration")
+        config_label.setFont(QFont("System", 13))
+        config_label.setContentsMargins(0, 10, 0, 5)
+        config_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        main_layout.addWidget(config_label)
+
+        # Whisper model configuration
+        whisper_layout = QHBoxLayout()
+        whisper_layout.setSpacing(10)
+
+        whisper_label = QLabel("Whisper Model:")
+        whisper_label.setFont(QFont("System", 12))
+        whisper_label.setMinimumWidth(120)
+
+        self.whisper_model_combo = QComboBox()
+        self.whisper_model_combo.setFont(QFont("System", 12))
+        self.whisper_model_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.whisper_model_combo.currentTextChanged.connect(self._on_whisper_model_changed)
+
+        self.current_whisper_label = QLabel("Current: base")
+        self.current_whisper_label.setFont(QFont("System", 11))
+        self.current_whisper_label.setStyleSheet("color: #666666;")
+        self.current_whisper_label.setMinimumWidth(100)
+
+        whisper_layout.addWidget(whisper_label)
+        whisper_layout.addWidget(self.whisper_model_combo)
+        whisper_layout.addWidget(self.current_whisper_label)
+        main_layout.addLayout(whisper_layout)
+
+        # Ollama model configuration
+        ollama_layout = QHBoxLayout()
+        ollama_layout.setSpacing(10)
+
+        ollama_label = QLabel("Ollama Model:")
+        ollama_label.setFont(QFont("System", 12))
+        ollama_label.setMinimumWidth(120)
+
+        self.ollama_model_combo = QComboBox()
+        self.ollama_model_combo.setFont(QFont("System", 12))
+        self.ollama_model_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.ollama_model_combo.setEditable(True)  # Allow custom model names
+        self.ollama_model_combo.currentTextChanged.connect(self._on_ollama_model_changed)
+
+        self.current_ollama_label = QLabel("Current: llama3.2:latest")
+        self.current_ollama_label.setFont(QFont("System", 11))
+        self.current_ollama_label.setStyleSheet("color: #666666;")
+        self.current_ollama_label.setMinimumWidth(150)
+
+        ollama_layout.addWidget(ollama_label)
+        ollama_layout.addWidget(self.ollama_model_combo)
+        ollama_layout.addWidget(self.current_ollama_label)
+        main_layout.addLayout(ollama_layout)
+
+        # Download progress section
+        progress_layout = QVBoxLayout()
+        progress_layout.setSpacing(5)
+
+        self.download_status_label = QLabel("Ready")
+        self.download_status_label.setFont(QFont("System", 11))
+        self.download_status_label.setStyleSheet("color: #666666;")
+
+        self.download_progress_bar = QProgressBar()
+        self.download_progress_bar.setFont(QFont("System", 10))
+        self.download_progress_bar.setVisible(False)  # Initially hidden
+        self.download_progress_bar.setMinimum(0)
+        self.download_progress_bar.setMaximum(100)
+
+        progress_layout.addWidget(self.download_status_label)
+        progress_layout.addWidget(self.download_progress_bar)
+        main_layout.addLayout(progress_layout)
 
     def _create_prompt_section(self, main_layout: QVBoxLayout) -> None:
         """Create the LLM prompt input section."""
@@ -256,6 +355,77 @@ class MeetingBuddyView(QMainWindow):
             prompt_text = self.prompt_input.toPlainText()
             self.on_prompt_changed(prompt_text)
 
+    def _on_whisper_model_changed(self, model_name: str) -> None:
+        """Handle Whisper model selection change."""
+        if self.on_whisper_model_changed and model_name:
+            self.on_whisper_model_changed(model_name)
+
+    def _on_ollama_model_changed(self, model_name: str) -> None:
+        """Handle Ollama model selection change."""
+        if self.on_ollama_model_changed and model_name:
+            self.on_ollama_model_changed(model_name)
+
+    # Qt signal slots for thread-safe UI updates
+    def _on_download_progress_updated(self, model_name: str, progress_percent: float, status: str) -> None:
+        """Handle download progress updates (Qt slot).
+
+        Args:
+            model_name: Name of the model being downloaded
+            progress_percent: Progress percentage (0.0 to 100.0)
+            status: Current download status
+        """
+        if self.download_progress_bar is not None:
+            self.download_progress_bar.setValue(int(progress_percent))
+            self.download_progress_bar.setVisible(True)
+
+        if self.download_status_label is not None:
+            self.download_status_label.setText(f"Downloading {model_name}: {status}")
+
+        self.logger.debug(f"Download progress updated: {model_name} - {progress_percent:.1f}% - {status}")
+
+    def _on_download_completed(self, model_name: str, success: bool, message: str) -> None:
+        """Handle download completion (Qt slot).
+
+        Args:
+            model_name: Name of the model that was downloaded
+            success: Whether the download was successful
+            message: Success or error message
+        """
+        if self.download_progress_bar is not None:
+            if success:
+                self.download_progress_bar.setValue(100)
+            self.download_progress_bar.setVisible(False)
+
+        if self.download_status_label is not None:
+            if success:
+                self.download_status_label.setText(f"✓ {model_name} downloaded successfully")
+            else:
+                self.download_status_label.setText(f"✗ Failed to download {model_name}: {message}")
+
+        self.logger.info(f"Download completed: {model_name} - Success: {success} - {message}")
+
+    def _on_whisper_model_status_updated(self, model_name: str) -> None:
+        """Handle Whisper model status updates (Qt slot).
+
+        Args:
+            model_name: Current Whisper model name
+        """
+        if self.current_whisper_label is not None:
+            self.current_whisper_label.setText(f"Current: {model_name}")
+
+        self.logger.debug(f"Whisper model status updated: {model_name}")
+
+    def _on_ollama_model_status_updated(self, model_name: str) -> None:
+        """Handle Ollama model status updates (Qt slot).
+
+        Args:
+            model_name: Current Ollama model name
+        """
+        if self.current_ollama_label is not None:
+            self.current_ollama_label.setText(f"Current: {model_name}")
+
+        self.logger.debug(f"Ollama model status updated: {model_name}")
+
     # Public methods for updating UI from presenter
     def populate_input_devices(self, devices: list[str], selected_index: int = 0) -> None:
         """Populate the input device combo box.
@@ -283,6 +453,194 @@ class MeetingBuddyView(QMainWindow):
             self.logger.debug(f"Set selected device index to: {selected_index}")
 
         self.logger.debug(f"Populated {len(devices)} input devices")
+
+    def populate_whisper_models(self, models: list[str], selected_model: str = "base") -> None:
+        """Populate the Whisper model combo box.
+
+        Args:
+            models: List of available Whisper model names
+            selected_model: Model name to select (default: "base")
+        """
+        if self.whisper_model_combo is None:
+            self.logger.error("whisper_model_combo is None!")
+            return
+
+        self.whisper_model_combo.clear()
+        if not models:
+            self.whisper_model_combo.addItem("No models available")
+            self.logger.warning("No Whisper models to populate")
+            return
+
+        for model in models:
+            self.whisper_model_combo.addItem(model)
+
+        # Set the selected model
+        if selected_model in models:
+            self.whisper_model_combo.setCurrentText(selected_model)
+            self.logger.debug(f"Set selected Whisper model to: {selected_model}")
+        elif models:
+            self.whisper_model_combo.setCurrentIndex(0)
+            self.logger.debug(f"Set Whisper model to first available: {models[0]}")
+
+        self.logger.debug(f"Populated {len(models)} Whisper models")
+
+    def populate_ollama_models(self, models: list[str], selected_model: str = "llama3.2:latest") -> None:
+        """Populate the Ollama model combo box.
+
+        Args:
+            models: List of available Ollama model names
+            selected_model: Model name to select (default: "llama3.2:latest")
+        """
+        if self.ollama_model_combo is None:
+            self.logger.error("ollama_model_combo is None!")
+            return
+
+        self.ollama_model_combo.clear()
+        if not models:
+            self.ollama_model_combo.addItem("No models available")
+            self.logger.warning("No Ollama models to populate")
+            return
+
+        for model in models:
+            self.ollama_model_combo.addItem(model)
+
+        # Set the selected model
+        if selected_model in models:
+            self.ollama_model_combo.setCurrentText(selected_model)
+            self.logger.debug(f"Set selected Ollama model to: {selected_model}")
+        elif models:
+            self.ollama_model_combo.setCurrentIndex(0)
+            self.logger.debug(f"Set Ollama model to first available: {models[0]}")
+        else:
+            # Allow custom model name even if not in list
+            self.ollama_model_combo.setCurrentText(selected_model)
+            self.logger.debug(f"Set custom Ollama model: {selected_model}")
+
+        self.logger.debug(f"Populated {len(models)} Ollama models")
+
+    def update_current_whisper_model(self, model_name: str) -> None:
+        """Update the current Whisper model status display.
+
+        Args:
+            model_name: Current Whisper model name
+        """
+        if self.current_whisper_label is not None:
+            self.current_whisper_label.setText(f"Current: {model_name}")
+            self.logger.debug(f"Updated current Whisper model display: {model_name}")
+
+    def update_current_ollama_model(self, model_name: str) -> None:
+        """Update the current Ollama model status display.
+
+        Args:
+            model_name: Current Ollama model name
+        """
+        if self.current_ollama_label is not None:
+            self.current_ollama_label.setText(f"Current: {model_name}")
+            self.logger.debug(f"Updated current Ollama model display: {model_name}")
+
+    def set_whisper_model_selection(self, model_name: str) -> None:
+        """Set the selected Whisper model in the combo box.
+
+        Args:
+            model_name: Model name to select
+        """
+        if self.whisper_model_combo is not None:
+            self.whisper_model_combo.setCurrentText(model_name)
+            self.logger.debug(f"Set Whisper model selection: {model_name}")
+
+    def set_ollama_model_selection(self, model_name: str) -> None:
+        """Set the selected Ollama model in the combo box.
+
+        Args:
+            model_name: Model name to select
+        """
+        if self.ollama_model_combo is not None:
+            self.ollama_model_combo.setCurrentText(model_name)
+            self.logger.debug(f"Set Ollama model selection: {model_name}")
+
+    def get_selected_whisper_model(self) -> str:
+        """Get the currently selected Whisper model.
+
+        Returns:
+            Selected Whisper model name
+        """
+        if self.whisper_model_combo is not None:
+            return self.whisper_model_combo.currentText()
+        return ""
+
+    def get_selected_ollama_model(self) -> str:
+        """Get the currently selected Ollama model.
+
+        Returns:
+            Selected Ollama model name
+        """
+        if self.ollama_model_combo is not None:
+            return self.ollama_model_combo.currentText()
+        return ""
+
+    # Thread-safe signal emission methods
+    def emit_download_progress_update(self, model_name: str, progress_percent: float, status: str) -> None:
+        """Emit download progress update signal (thread-safe).
+
+        Args:
+            model_name: Name of the model being downloaded
+            progress_percent: Progress percentage (0.0 to 100.0)
+            status: Current download status
+        """
+        self.model_download_progress_updated.emit(model_name, progress_percent, status)
+
+    def emit_download_completed(self, model_name: str, success: bool, message: str) -> None:
+        """Emit download completion signal (thread-safe).
+
+        Args:
+            model_name: Name of the model that was downloaded
+            success: Whether the download was successful
+            message: Success or error message
+        """
+        self.model_download_completed.emit(model_name, success, message)
+
+    def emit_whisper_model_status_update(self, model_name: str) -> None:
+        """Emit Whisper model status update signal (thread-safe).
+
+        Args:
+            model_name: Current Whisper model name
+        """
+        self.whisper_model_status_updated.emit(model_name)
+
+    def emit_ollama_model_status_update(self, model_name: str) -> None:
+        """Emit Ollama model status update signal (thread-safe).
+
+        Args:
+            model_name: Current Ollama model name
+        """
+        self.ollama_model_status_updated.emit(model_name)
+
+    def show_download_progress(self, show: bool = True) -> None:
+        """Show or hide the download progress bar.
+
+        Args:
+            show: Whether to show the progress bar
+        """
+        if self.download_progress_bar is not None:
+            self.download_progress_bar.setVisible(show)
+
+    def set_download_status(self, status: str) -> None:
+        """Set the download status message.
+
+        Args:
+            status: Status message to display
+        """
+        if self.download_status_label is not None:
+            self.download_status_label.setText(status)
+
+    def reset_download_progress(self) -> None:
+        """Reset the download progress display."""
+        if self.download_progress_bar is not None:
+            self.download_progress_bar.setValue(0)
+            self.download_progress_bar.setVisible(False)
+
+        if self.download_status_label is not None:
+            self.download_status_label.setText("Ready")
 
     def set_transcription_text(self, text: str) -> None:
         """Set the transcription text content.

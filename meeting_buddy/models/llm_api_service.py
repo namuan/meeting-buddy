@@ -54,6 +54,82 @@ class LLMApiService:
 
         self.logger.info(f"LLMApiService initialized: endpoint={endpoint}, model={model}")
 
+    def update_config(self, **kwargs) -> bool:
+        """Update service configuration.
+
+        Args:
+            **kwargs: Configuration parameters to update
+                     (endpoint, model, api_timeout, max_retries, retry_delay)
+
+        Returns:
+            True if configuration was updated successfully, False otherwise
+        """
+        config_changed = False
+
+        for key, value in kwargs.items():
+            if hasattr(self, key) and getattr(self, key) != value:
+                setattr(self, key, value)
+                config_changed = True
+                self.logger.info(f"Updated {key}: {value}")
+
+        if config_changed:
+            # Reset connection state to force recheck with new config
+            self._is_connected = False
+            self._last_connection_check = None
+
+        return config_changed
+
+    def update_model(self, model: str) -> bool:
+        """Update the Ollama model to use.
+
+        Args:
+            model: New model name to use
+
+        Returns:
+            True if model was updated, False if same model
+        """
+        if self.model != model:
+            old_model = self.model
+            self.model = model
+            self.logger.info(f"Model updated from {old_model} to {model}")
+            return True
+        return False
+
+    def update_endpoint(self, endpoint: str) -> bool:
+        """Update the Ollama API endpoint.
+
+        Args:
+            endpoint: New endpoint URL
+
+        Returns:
+            True if endpoint was updated, False if same endpoint
+        """
+        if self.endpoint != endpoint:
+            old_endpoint = self.endpoint
+            self.endpoint = endpoint
+            # Reset connection state to force recheck with new endpoint
+            self._is_connected = False
+            self._last_connection_check = None
+            self.logger.info(f"Endpoint updated from {old_endpoint} to {endpoint}")
+            return True
+        return False
+
+    def get_config(self) -> dict:
+        """Get current service configuration.
+
+        Returns:
+            Dictionary containing current configuration
+        """
+        return {
+            "endpoint": self.endpoint,
+            "model": self.model,
+            "api_timeout": self.api_timeout,
+            "max_retries": self.max_retries,
+            "retry_delay": self.retry_delay,
+            "is_connected": self._is_connected,
+            "last_connection_check": self._last_connection_check.isoformat() if self._last_connection_check else None,
+        }
+
     @property
     def is_connected(self) -> bool:
         """Check if connected to Ollama API."""

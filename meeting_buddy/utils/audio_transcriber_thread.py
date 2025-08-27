@@ -95,13 +95,59 @@ class AudioTranscriberThread(threading.Thread, EnhancedLoggerMixin):
             "AudioTranscriberThread initialized", initialization_complete=True, whisper_available=whisper is not None
         )
 
-        self.log_method_call(
-            "__init__",
-            model_name=model_name,
-            language=language,
-            max_queue_size=max_queue_size,
-            processing_timeout=processing_timeout,
-        )
+    def update_model_config(self, model_name: str, language: Optional[str] = None) -> bool:
+        """Update model configuration and reload if necessary.
+
+        Args:
+            model_name: New Whisper model name to use
+            language: New language code (None for auto-detect)
+
+        Returns:
+            True if model was updated successfully, False otherwise
+        """
+        config_changed = False
+
+        if model_name != self.model_name:
+            self.model_name = model_name
+            config_changed = True
+            self.structured_logger.info("Model name updated", new_model=model_name)
+
+        if language != self.language:
+            self.language = language
+            config_changed = True
+            self.structured_logger.info("Language updated", new_language=language or "auto")
+
+        if config_changed:
+            # Update structured logging context
+            self.structured_logger.update_context(model_name=self.model_name, language=self.language or "auto")
+
+            # Reload model with new configuration
+            return self.reload_model()
+
+        return True
+
+    def can_change_model(self) -> bool:
+        """Check if model can be safely changed.
+
+        Returns:
+            True if model can be changed (not currently transcribing), False otherwise
+        """
+        with self._transcribing_lock:
+            return not self._transcribing
+
+    def get_model_config(self) -> dict:
+        """Get current model configuration.
+
+        Returns:
+            Dictionary containing current model configuration
+        """
+        return {
+            "model_name": self.model_name,
+            "language": self.language,
+            "model_loaded": self._model_loaded,
+            "max_queue_size": self.max_queue_size,
+            "processing_timeout": self.processing_timeout,
+        }
 
     @timed_operation("whisper_model_initialization")
     def _initialize_whisper(self) -> None:
@@ -132,6 +178,49 @@ class AudioTranscriberThread(threading.Thread, EnhancedLoggerMixin):
             self._model_loaded = False
             if self._error_callback:
                 self._error_callback(e)
+
+    @timed_operation("whisper_model_reload")
+    def reload_model(self) -> bool:
+        """Reload Whisper model with current configuration.
+
+        Returns:
+            True if model was reloaded successfully, False otherwise
+        """
+        if whisper is None:
+            self.structured_logger.error("Cannot reload model: Whisper not available", whisper_installed=False)
+            return False
+
+        try:
+            self.structured_logger.info("Reloading Whisper model", model_name=self.model_name, reload_started=True)
+
+            if self._progress_callback:
+                self._progress_callback(f"Reloading {self.model_name} model...")
+
+            # Clear existing model
+            self._whisper_model = None
+            self._model_loaded = False
+
+            # Load new model
+            self._whisper_model = whisper.load_model(self.model_name)
+            self._model_loaded = True
+
+            self.structured_logger.info(
+                "Whisper model reloaded successfully", model_name=self.model_name, model_loaded=True
+            )
+
+            if self._progress_callback:
+                self._progress_callback(f"Model {self.model_name} reloaded successfully")
+
+            return True
+
+        except Exception as e:
+            self.structured_logger.exception("Failed to reload Whisper model", extra={"model_name": self.model_name})
+            self._model_loaded = False
+
+            if self._error_callback:
+                self._error_callback(e)
+
+            return False
 
     def set_transcription_callback(self, callback: Callable[[TranscriptionResult], None]) -> None:
         """Set callback function for transcription results.
@@ -567,29 +656,6 @@ class AudioTranscriberThread(threading.Thread, EnhancedLoggerMixin):
             }
 
         return stats_dict
-
-    def reload_model(self, model_name: Optional[str] = None) -> bool:
-        """Reload the Whisper model.
-
-        Args:
-            model_name: Optional new model name to load
-
-        Returns:
-            True if model was reloaded successfully, False otherwise
-        """
-        if model_name:
-            self.model_name = model_name
-
-        self.logger.info(f"Reloading Whisper model: {self.model_name}")
-
-        # Clear existing model
-        self._whisper_model = None
-        self._model_loaded = False
-
-        # Reload model
-        self._initialize_whisper()
-
-        return self._model_loaded
 
     def __del__(self):
         """Destructor to ensure cleanup."""
