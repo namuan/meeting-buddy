@@ -74,12 +74,21 @@ A real-time audio recording and transcription application with AI-powered analys
 
 ### Audio Setup (macOS)
 
+Install BlackHole (via brew)
+
+```shell
+brew install blackhole-2ch
+```
+
 For optimal audio capture on macOS:
 
 1. Open **Audio MIDI Setup** (Applications > Utilities)
 2. Configure your audio devices as shown:
 
 ![Audio MIDI Setup](assets/audio-midi-setup.png)
+
+> [!WARNING]
+> If you can't see BlackHole in the list, you may need to `sudo killall coreaudiod`
 
 3. Set the correct sound output device:
 
