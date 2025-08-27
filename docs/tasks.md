@@ -2,15 +2,6 @@
 
 A logically ordered, actionable checklist to improve Meeting Buddy across architecture, code quality, performance, testing, packaging, security, documentation, and developer experience. Each task is designed to be independently checkable and leads from foundational hygiene to advanced enhancements.
 
-1. [ ] Establish supported Python versions consistently across the project (docs, pyproject requires-python, classifiers). Align on Python 3.10 or update to newer versions; remove conflicting classifiers (3.11–3.13) if not supported.
-2. [ ] Fix Ruff configuration target-version to match supported Python version (e.g., set to "py310" if we stay on Python 3.10).
-3. [ ] Correct packaging configuration: replace `py-modules = ["meeting_buddy"]` with proper package discovery (e.g., setuptools.find_packages) so the `meeting_buddy` package is installed correctly.
-4. [ ] Review and correct dependency versions in pyproject: verify PyQt6, PyAudio, requests, and Whisper. Investigate the odd `openai-whisper>=20250625` spec; replace with a stable, known-good version or extras/optional dependency.
-5. [ ] Add explicit development dependency management guidance (uv/venv) and update Makefile targets (install, lint, format, test, run) to reflect current tools.
-6. [ ] Introduce a minimal CONTRIBUTING.md outlining environment setup, coding standards, and how to run/lint/test.
-7. [ ] Create or update an architectural overview doc (docs/architecture.md) explaining MVP boundaries, key threads (recorder/transcriber/LLM), model responsibilities, and data flow.
-8. [ ] Add CODEOWNERS or maintainers info to clarify review and ownership.
-9. [ ] Normalize logging levels and patterns: define a logging policy (when to use info/debug/warn/error) and ensure structured logging redaction is enabled by default for sensitive data.
 10. [ ] Implement a central exception hierarchy for domain errors (RecordingError, TranscriptionError, LLMServiceError, ConfigurationError) to improve error handling consistency.
 11. [ ] Audit try/except blocks for broad exceptions; replace with specific exceptions and add actionable user messages in the View for recoverable errors.
 12. [ ] Ensure all threads (AudioRecorderThread, AudioTranscriberThread, LLMThread) support clean start/stop semantics: idempotent stop, join with timeout, and resource cleanup in finally blocks.
