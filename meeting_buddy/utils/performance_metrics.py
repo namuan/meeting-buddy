@@ -9,7 +9,7 @@ from collections import defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from threading import Lock
-from typing import Any, Optional, Union
+from typing import Any
 
 
 @dataclass
@@ -65,7 +65,7 @@ class PerformanceMetric:
         if len(self.recent_durations) > keep_recent:
             self.recent_durations.pop(0)
 
-    def get_percentiles(self, percentiles: Optional[list[float]] = None) -> dict[str, float]:
+    def get_percentiles(self, percentiles: list[float] | None = None) -> dict[str, float]:
         """Calculate percentiles from recent durations.
 
         Args:
@@ -89,7 +89,7 @@ class PerformanceMetric:
 
         return result
 
-    def to_dict(self) -> dict[str, Union[str, int, float]]:
+    def to_dict(self) -> dict[str, str | int | float]:
         """Convert metrics to dictionary."""
         result = {
             "operation": self.operation,
@@ -156,7 +156,7 @@ class PerformanceTracker:
             duration = time.time() - start_time
             self.record_operation(operation, duration, operation_result["success"], **context)
 
-    def get_metrics(self, operation: Optional[str] = None) -> Union[dict[str, Any], dict[str, dict[str, Any]]]:
+    def get_metrics(self, operation: str | None = None) -> dict[str, Any] | dict[str, dict[str, Any]]:
         """Get performance metrics.
 
         Args:
@@ -201,7 +201,7 @@ class PerformanceTracker:
                 "operations": list(self._metrics.keys()),
             }
 
-    def reset_metrics(self, operation: Optional[str] = None) -> None:
+    def reset_metrics(self, operation: str | None = None) -> None:
         """Reset performance metrics.
 
         Args:
@@ -296,7 +296,7 @@ def measure_performance(operation: str, **context):
     return _global_tracker.measure_operation(operation, **context)
 
 
-def get_performance_stats(operation: Optional[str] = None) -> Union[dict[str, Any], dict[str, dict[str, Any]]]:
+def get_performance_stats(operation: str | None = None) -> dict[str, Any] | dict[str, dict[str, Any]]:
     """Get performance statistics from the global tracker.
 
     Args:
@@ -317,7 +317,7 @@ def get_performance_summary() -> dict[str, Any]:
     return _global_tracker.get_summary()
 
 
-def reset_performance_stats(operation: Optional[str] = None) -> None:
+def reset_performance_stats(operation: str | None = None) -> None:
     """Reset performance statistics in the global tracker.
 
     Args:

@@ -6,9 +6,10 @@ app settings and model configurations for Whisper and Ollama models.
 
 import json
 import logging
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, ClassVar, Optional
+from typing import Any, ClassVar
 
 
 class ConfigurationData:
@@ -22,7 +23,7 @@ class ConfigurationData:
         api_timeout: float = 30.0,
         max_retries: int = 3,
         retry_delay: float = 1.0,
-        language: Optional[str] = None,
+        language: str | None = None,
         auto_save: bool = True,
     ):
         """Initialize configuration data.
@@ -104,7 +105,7 @@ class ConfigurationModel:
     # Default configuration file name
     DEFAULT_CONFIG_FILE = "meeting_buddy_config.json"
 
-    def __init__(self, config_file_path: Optional[str] = None):
+    def __init__(self, config_file_path: str | None = None):
         """Initialize the ConfigurationModel.
 
         Args:

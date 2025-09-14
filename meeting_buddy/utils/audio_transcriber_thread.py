@@ -7,8 +7,8 @@ real-time transcription processing using Whisper.
 import queue
 import threading
 import time
+from collections.abc import Callable
 from datetime import datetime
-from typing import Callable, Optional
 
 import numpy as np
 
@@ -34,7 +34,7 @@ class AudioTranscriberThread(threading.Thread, EnhancedLoggerMixin):
         self,
         audio_queue: queue.Queue,
         model_name: str = "base",
-        language: Optional[str] = None,
+        language: str | None = None,
         max_queue_size: int = 100,
         processing_timeout: float = 1.0,
     ):
@@ -69,7 +69,7 @@ class AudioTranscriberThread(threading.Thread, EnhancedLoggerMixin):
         self.processing_timeout = processing_timeout
 
         # Whisper model
-        self._whisper_model: Optional[object] = None
+        self._whisper_model: object | None = None
         self._model_loaded = False
 
         # Processing state
@@ -83,10 +83,10 @@ class AudioTranscriberThread(threading.Thread, EnhancedLoggerMixin):
         self._transcription_results: list[TranscriptionResult] = []
 
         # Callbacks
-        self._transcription_callback: Optional[Callable[[TranscriptionResult], None]] = None
-        self._chunk_processed_callback: Optional[Callable[[TranscriptionResult], None]] = None
-        self._error_callback: Optional[Callable[[Exception], None]] = None
-        self._progress_callback: Optional[Callable[[str], None]] = None
+        self._transcription_callback: Callable[[TranscriptionResult], None] | None = None
+        self._chunk_processed_callback: Callable[[TranscriptionResult], None] | None = None
+        self._error_callback: Callable[[Exception], None] | None = None
+        self._progress_callback: Callable[[str], None] | None = None
 
         # Initialize Whisper model
         self._initialize_whisper()
@@ -95,7 +95,7 @@ class AudioTranscriberThread(threading.Thread, EnhancedLoggerMixin):
             "AudioTranscriberThread initialized", initialization_complete=True, whisper_available=whisper is not None
         )
 
-    def update_model_config(self, model_name: str, language: Optional[str] = None) -> bool:
+    def update_model_config(self, model_name: str, language: str | None = None) -> bool:
         """Update model configuration and reload if necessary.
 
         Args:
@@ -320,7 +320,7 @@ class AudioTranscriberThread(threading.Thread, EnhancedLoggerMixin):
         # This prevents UI hanging when stopping transcription
         self.logger.debug("Transcription stop initiated (non-blocking)")
 
-    def add_audio_chunk(self, audio_data: np.ndarray, timestamp: datetime, chunk_id: Optional[str] = None) -> bool:
+    def add_audio_chunk(self, audio_data: np.ndarray, timestamp: datetime, chunk_id: str | None = None) -> bool:
         """Add an audio chunk to the transcription queue.
 
         Args:

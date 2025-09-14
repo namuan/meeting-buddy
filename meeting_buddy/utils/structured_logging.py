@@ -8,7 +8,7 @@ import functools
 import logging
 import time
 from contextlib import contextmanager
-from typing import Any, Optional, Union
+from typing import Any
 
 from .logging_config import LoggerMixin
 
@@ -16,7 +16,7 @@ from .logging_config import LoggerMixin
 class StructuredLogger(LoggerMixin):
     """Enhanced logger with structured logging capabilities."""
 
-    def __init__(self, context: Optional[dict[str, Any]] = None):
+    def __init__(self, context: dict[str, Any] | None = None):
         """Initialize structured logger with optional context.
 
         Args:
@@ -165,7 +165,7 @@ class StructuredLogger(LoggerMixin):
             **kwargs,
         )
 
-    def get_performance_stats(self) -> dict[str, dict[str, Union[int, float]]]:
+    def get_performance_stats(self) -> dict[str, dict[str, int | float]]:
         """Get performance statistics.
 
         Returns:
@@ -187,7 +187,7 @@ class StructuredLogger(LoggerMixin):
         self._performance_metrics.clear()
 
 
-def timed_operation(operation_name: str, logger: Optional[StructuredLogger] = None):
+def timed_operation(operation_name: str, logger: StructuredLogger | None = None):
     """Decorator to automatically log operation timing.
 
     Args:
@@ -287,7 +287,7 @@ class EnhancedLoggerMixin(LoggerMixin):
         )
 
 
-def create_contextual_logger(name: str, context: Optional[dict[str, Any]] = None) -> StructuredLogger:
+def create_contextual_logger(name: str, context: dict[str, Any] | None = None) -> StructuredLogger:
     """Create a contextual logger with the given name and context.
 
     Args:

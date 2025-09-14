@@ -5,7 +5,7 @@ all UI components and user interface logic.
 """
 
 import logging
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPalette
@@ -42,25 +42,25 @@ class MeetingBuddyView(QMainWindow):
         self.logger = logging.getLogger(__name__)
 
         # Callback functions (to be set by presenter)
-        self.on_input_device_changed: Optional[Callable[[int], None]] = None
-        self.on_start_recording: Optional[Callable[[], None]] = None
-        self.on_stop_recording: Optional[Callable[[], None]] = None
-        self.on_whisper_model_changed: Optional[Callable[[str], None]] = None
-        self.on_ollama_model_changed: Optional[Callable[[str], None]] = None
-        self.on_prompt_changed: Optional[Callable[[str], None]] = None
+        self.on_input_device_changed: Callable[[int], None] | None = None
+        self.on_start_recording: Callable[[], None] | None = None
+        self.on_stop_recording: Callable[[], None] | None = None
+        self.on_whisper_model_changed: Callable[[str], None] | None = None
+        self.on_ollama_model_changed: Callable[[str], None] | None = None
+        self.on_prompt_changed: Callable[[str], None] | None = None
         # UI components
-        self.input_device_combo: Optional[QComboBox] = None
-        self.start_button: Optional[QPushButton] = None
-        self.stop_button: Optional[QPushButton] = None
-        self.whisper_model_combo: Optional[QComboBox] = None
-        self.ollama_model_combo: Optional[QComboBox] = None
-        self.current_whisper_label: Optional[QLabel] = None
-        self.current_ollama_label: Optional[QLabel] = None
-        self.download_progress_bar: Optional[QProgressBar] = None
-        self.download_status_label: Optional[QLabel] = None
-        self.prompt_input: Optional[QTextEdit] = None
-        self.transcription_text: Optional[QTextEdit] = None
-        self.llm_response_text: Optional[QTextEdit] = None
+        self.input_device_combo: QComboBox | None = None
+        self.start_button: QPushButton | None = None
+        self.stop_button: QPushButton | None = None
+        self.whisper_model_combo: QComboBox | None = None
+        self.ollama_model_combo: QComboBox | None = None
+        self.current_whisper_label: QLabel | None = None
+        self.current_ollama_label: QLabel | None = None
+        self.download_progress_bar: QProgressBar | None = None
+        self.download_status_label: QLabel | None = None
+        self.prompt_input: QTextEdit | None = None
+        self.transcription_text: QTextEdit | None = None
+        self.llm_response_text: QTextEdit | None = None
 
         self._setup_ui()
         self._connect_signals()

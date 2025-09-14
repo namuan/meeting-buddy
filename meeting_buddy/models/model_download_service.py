@@ -6,9 +6,9 @@ background downloading of Whisper models with progress tracking.
 
 import threading
 import time
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Optional
 
 try:
     import whisper
@@ -26,9 +26,9 @@ class ModelDownloadProgress:
         model_name: str,
         status: str = "pending",
         progress_percent: float = 0.0,
-        download_speed: Optional[str] = None,
-        eta: Optional[str] = None,
-        error_message: Optional[str] = None,
+        download_speed: str | None = None,
+        eta: str | None = None,
+        error_message: str | None = None,
     ):
         """Initialize model download progress.
 
@@ -73,8 +73,8 @@ class ModelDownloadService(EnhancedLoggerMixin):
         )
 
         # Download state
-        self._current_download: Optional[str] = None
-        self._download_thread: Optional[threading.Thread] = None
+        self._current_download: str | None = None
+        self._download_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._download_lock = threading.Lock()
 
@@ -83,7 +83,7 @@ class ModelDownloadService(EnhancedLoggerMixin):
 
         # Callbacks
         self._progress_callbacks: list[Callable[[ModelDownloadProgress], None]] = []
-        self._completion_callbacks: list[Callable[[str, bool, Optional[str]], None]] = []
+        self._completion_callbacks: list[Callable[[str, bool, str | None], None]] = []
 
         self.structured_logger.info(
             "ModelDownloadService initialized",
@@ -106,7 +106,7 @@ class ModelDownloadService(EnhancedLoggerMixin):
             )
 
     @property
-    def current_download_model(self) -> Optional[str]:
+    def current_download_model(self) -> str | None:
         """Get the name of the currently downloading model.
 
         Returns:
@@ -115,7 +115,7 @@ class ModelDownloadService(EnhancedLoggerMixin):
         with self._download_lock:
             return self._current_download
 
-    def get_download_progress(self, model_name: str) -> Optional[ModelDownloadProgress]:
+    def get_download_progress(self, model_name: str) -> ModelDownloadProgress | None:
         """Get download progress for a specific model.
 
         Args:
@@ -421,7 +421,7 @@ class ModelDownloadService(EnhancedLoggerMixin):
             callback=str(callback),
         )
 
-    def add_completion_callback(self, callback: Callable[[str, bool, Optional[str]], None]) -> None:
+    def add_completion_callback(self, callback: Callable[[str, bool, str | None], None]) -> None:
         """Add callback for download completion.
 
         Args:
@@ -453,7 +453,7 @@ class ModelDownloadService(EnhancedLoggerMixin):
         except ValueError:
             return False
 
-    def remove_completion_callback(self, callback: Callable[[str, bool, Optional[str]], None]) -> bool:
+    def remove_completion_callback(self, callback: Callable[[str, bool, str | None], None]) -> bool:
         """Remove completion callback.
 
         Args:
@@ -484,7 +484,7 @@ class ModelDownloadService(EnhancedLoggerMixin):
             except Exception:
                 self.structured_logger.exception("Error in progress callback", extra={"callback": str(callback)})
 
-    def _notify_completion_callbacks(self, model_name: str, success: bool, error_message: Optional[str]) -> None:
+    def _notify_completion_callbacks(self, model_name: str, success: bool, error_message: str | None) -> None:
         """Notify all completion callbacks.
 
         Args:

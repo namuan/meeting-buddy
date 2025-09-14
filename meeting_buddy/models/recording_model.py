@@ -6,7 +6,6 @@ recording data, transcription content, and recording metadata.
 
 import logging
 from datetime import datetime
-from typing import Optional
 
 import numpy as np
 
@@ -17,7 +16,7 @@ from .transcription_model import TranscriptionModel
 class RecordingInfo:
     """Data class representing a recording."""
 
-    def __init__(self, name: str, timestamp: datetime, file_path: Optional[str] = None):
+    def __init__(self, name: str, timestamp: datetime, file_path: str | None = None):
         self.name = name
         self.timestamp = timestamp
         self.file_path = file_path
@@ -64,12 +63,12 @@ class RecordingModel:
     def __init__(self):
         """Initialize the RecordingModel."""
         self.logger = logging.getLogger(__name__)
-        self._current_recording: Optional[RecordingInfo] = None
+        self._current_recording: RecordingInfo | None = None
         self._current_transcription: str = ""
         self._is_recording: bool = False
 
         # Transcription integration
-        self._transcription_model: Optional[TranscriptionModel] = None
+        self._transcription_model: TranscriptionModel | None = None
         self._transcription_enabled: bool = False
 
         # Initialize transcription model
@@ -117,7 +116,7 @@ class RecordingModel:
         self.logger.debug(f"Chunk processed: {result.text}")
 
     @property
-    def current_recording(self) -> Optional[RecordingInfo]:
+    def current_recording(self) -> RecordingInfo | None:
         """Get currently active recording."""
         return self._current_recording
 
@@ -137,11 +136,11 @@ class RecordingModel:
         return self._transcription_enabled
 
     @property
-    def transcription_model(self) -> Optional[TranscriptionModel]:
+    def transcription_model(self) -> TranscriptionModel | None:
         """Get the transcription model instance."""
         return self._transcription_model
 
-    def start_recording(self, recording_name: Optional[str] = None) -> RecordingInfo:
+    def start_recording(self, recording_name: str | None = None) -> RecordingInfo:
         """Start a new recording session.
 
         Args:
@@ -173,7 +172,7 @@ class RecordingModel:
         self.logger.info(f"Started recording: {self._current_recording}")
         return self._current_recording
 
-    def stop_recording(self) -> Optional[RecordingInfo]:
+    def stop_recording(self) -> RecordingInfo | None:
         """Stop the current recording session.
 
         Returns:
@@ -259,7 +258,7 @@ class RecordingModel:
             self._current_recording.duration = duration
             self.logger.debug(f"Updated recording duration: {duration:.1f}s")
 
-    def add_audio_chunk(self, audio_data: np.ndarray, sample_rate: int = 16000) -> Optional[AudioChunk]:
+    def add_audio_chunk(self, audio_data: np.ndarray, sample_rate: int = 16000) -> AudioChunk | None:
         """Add an audio chunk for transcription during recording.
 
         Args:
@@ -281,7 +280,7 @@ class RecordingModel:
         self.logger.debug(f"Added audio chunk: {chunk}")
         return chunk
 
-    def get_transcription_results(self, recording_index: Optional[int] = None) -> list[TranscriptionResult]:
+    def get_transcription_results(self, recording_index: int | None = None) -> list[TranscriptionResult]:
         """Get transcription results for a recording or current session.
 
         Args:
@@ -313,7 +312,7 @@ class RecordingModel:
             self._transcription_model._transcription_results.append(result)
         self.logger.debug(f"Stored transcription result: {result}")
 
-    def get_audio_chunks(self, recording_index: Optional[int] = None) -> list[AudioChunk]:
+    def get_audio_chunks(self, recording_index: int | None = None) -> list[AudioChunk]:
         """Get audio chunks for a recording or current session.
 
         Args:

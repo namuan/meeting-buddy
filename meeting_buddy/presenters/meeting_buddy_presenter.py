@@ -11,7 +11,6 @@ import shutil
 import tempfile
 import time
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 from PyQt6.QtCore import QObject, pyqtSignal
@@ -59,7 +58,7 @@ class MeetingBuddyPresenter(QObject):
         self.logger = logging.getLogger(__name__)
 
         # Temporary folder management
-        self._temp_dir: Optional[Path] = None
+        self._temp_dir: Path | None = None
         self._temp_dir_created = False
 
         # Initialize temporary folder
@@ -91,14 +90,14 @@ class MeetingBuddyPresenter(QObject):
         self.view = MeetingBuddyView()
 
         # Transcription threads
-        self._audio_recorder_thread: Optional[AudioRecorderThread] = None
-        self._audio_transcriber_thread: Optional[AudioTranscriberThread] = None
-        self._transcription_queue: Optional[queue.Queue] = None
+        self._audio_recorder_thread: AudioRecorderThread | None = None
+        self._audio_transcriber_thread: AudioTranscriberThread | None = None
+        self._transcription_queue: queue.Queue | None = None
         self._transcription_active = False
 
         # LLM threads
-        self._llm_thread: Optional[LLMThread] = None
-        self._llm_request_queue: Optional[queue.Queue] = None
+        self._llm_thread: LLMThread | None = None
+        self._llm_request_queue: queue.Queue | None = None
         self._llm_active = False
 
         # Connect view callbacks to presenter methods
@@ -244,7 +243,7 @@ class MeetingBuddyPresenter(QObject):
             self._temp_dir = None
             self._temp_dir_created = False
 
-    def get_temp_folder(self) -> Optional[Path]:
+    def get_temp_folder(self) -> Path | None:
         """Get the path to the temporary folder.
 
         Returns:
@@ -252,7 +251,7 @@ class MeetingBuddyPresenter(QObject):
         """
         return self._temp_dir if self._temp_dir_created else None
 
-    def get_audio_chunks_folder(self) -> Optional[Path]:
+    def get_audio_chunks_folder(self) -> Path | None:
         """Get the path to the audio chunks subfolder.
 
         Returns:
@@ -262,7 +261,7 @@ class MeetingBuddyPresenter(QObject):
             return self._temp_dir / "audio_chunks"
         return None
 
-    def get_recordings_folder(self) -> Optional[Path]:
+    def get_recordings_folder(self) -> Path | None:
         """Get the path to the recordings subfolder.
 
         Returns:
@@ -272,7 +271,7 @@ class MeetingBuddyPresenter(QObject):
             return self._temp_dir / "recordings"
         return None
 
-    def get_transcriptions_folder(self) -> Optional[Path]:
+    def get_transcriptions_folder(self) -> Path | None:
         """Get the path to the transcriptions subfolder.
 
         Returns:
@@ -282,7 +281,7 @@ class MeetingBuddyPresenter(QObject):
             return self._temp_dir / "transcriptions"
         return None
 
-    def create_temp_file(self, subfolder: str, prefix: str = "temp_", suffix: str = ".tmp") -> Optional[Path]:
+    def create_temp_file(self, subfolder: str, prefix: str = "temp_", suffix: str = ".tmp") -> Path | None:
         """Create a temporary file in the specified subfolder.
 
         Args:
@@ -313,7 +312,7 @@ class MeetingBuddyPresenter(QObject):
             self.logger.exception(f"Failed to create temporary file in {subfolder}")
             return None
 
-    def cleanup_temp_files(self, subfolder: Optional[str] = None, pattern: str = "*") -> int:
+    def cleanup_temp_files(self, subfolder: str | None = None, pattern: str = "*") -> int:
         """Clean up temporary files in a specific subfolder or all subfolders.
 
         Args:
@@ -561,7 +560,7 @@ class MeetingBuddyPresenter(QObject):
         """
         return self.recording_model.is_recording
 
-    def get_current_recording_name(self) -> Optional[str]:
+    def get_current_recording_name(self) -> str | None:
         """Get the name of the current recording.
 
         Returns:

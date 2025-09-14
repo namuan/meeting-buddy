@@ -37,6 +37,8 @@ dev-dependencies = [
     "tox-uv",
     "ruff",
     "pyinstaller",
+    "radon>=6.0.1",
+    "xenon>=0.9.3",
 ]
 
 [build-system]

@@ -7,8 +7,8 @@ chunked audio recording and integration with transcription processing.
 import logging
 import threading
 import time
+from collections.abc import Callable
 from datetime import datetime
-from typing import Callable, Optional
 
 import numpy as np
 import pyaudio
@@ -29,7 +29,7 @@ class AudioRecorderThread(threading.Thread):
     def __init__(
         self,
         device: AudioDeviceInfo,
-        transcription_model: Optional[TranscriptionModel] = None,
+        transcription_model: TranscriptionModel | None = None,
         chunk_duration_seconds: float = 2.0,
         sample_rate: int = 16000,
         channels: int = 1,
@@ -66,17 +66,17 @@ class AudioRecorderThread(threading.Thread):
         self._stop_event = threading.Event()
         self._recording_lock = threading.RLock()  # Reentrant lock for thread safety
         self._cleanup_lock = threading.Lock()  # Lock for cleanup operations
-        self._pyaudio_instance: Optional[pyaudio.PyAudio] = None
-        self._stream: Optional[pyaudio.Stream] = None
+        self._pyaudio_instance: pyaudio.PyAudio | None = None
+        self._stream: pyaudio.Stream | None = None
 
         # Audio data management
         self._current_chunk_frames: list[bytes] = []
-        self._chunk_start_time: Optional[datetime] = None
+        self._chunk_start_time: datetime | None = None
         self._total_frames_recorded = 0
 
         # Callbacks
-        self._chunk_ready_callback: Optional[Callable[[np.ndarray, datetime], None]] = None
-        self._error_callback: Optional[Callable[[Exception], None]] = None
+        self._chunk_ready_callback: Callable[[np.ndarray, datetime], None] | None = None
+        self._error_callback: Callable[[Exception], None] | None = None
 
         self.logger.info(f"AudioRecorderThread initialized for device: {device.name}")
         self.logger.debug(

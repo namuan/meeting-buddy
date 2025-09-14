@@ -8,7 +8,7 @@ import logging
 import re
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 # Global logging configuration storage
 _logging_config: dict[str, Any] = {}
@@ -112,7 +112,7 @@ def _create_formatters(enable_structured: bool, redact_sensitive: bool) -> tuple
 
 def setup_logging(
     verbosity: int = 0,
-    log_file: Optional[str] = None,
+    log_file: str | None = None,
     log_to_console: bool = True,
     enable_structured_logging: bool = True,
     redact_sensitive_data: bool = True,

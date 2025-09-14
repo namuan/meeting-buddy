@@ -6,7 +6,6 @@ audio device detection, enumeration, and management.
 
 import logging
 import re
-from typing import Optional
 
 import pyaudio
 
@@ -38,9 +37,9 @@ class AudioDeviceModel:
     def __init__(self):
         """Initialize the AudioDeviceModel."""
         self.logger = logging.getLogger(__name__)
-        self._pyaudio_instance: Optional[pyaudio.PyAudio] = None
+        self._pyaudio_instance: pyaudio.PyAudio | None = None
         self._input_devices: list[AudioDeviceInfo] = []
-        self._selected_input_device: Optional[AudioDeviceInfo] = None
+        self._selected_input_device: AudioDeviceInfo | None = None
 
         self._initialize_pyaudio()
         self.refresh_devices()
@@ -110,7 +109,7 @@ class AudioDeviceModel:
             self._input_devices.append(input_device)
             self.logger.debug(f"Added input device: {input_device}")
 
-    def _find_blackhole_device(self) -> Optional[int]:
+    def _find_blackhole_device(self) -> int | None:
         """Find the index of a BlackHole device in the input devices list.
 
         Returns:
@@ -137,7 +136,7 @@ class AudioDeviceModel:
         return self._input_devices.copy()
 
     @property
-    def selected_input_device(self) -> Optional[AudioDeviceInfo]:
+    def selected_input_device(self) -> AudioDeviceInfo | None:
         """Get currently selected input device."""
         return self._selected_input_device
 
@@ -158,7 +157,7 @@ class AudioDeviceModel:
         self.logger.info(f"Selected input device: {self._selected_input_device}")
         return True
 
-    def get_pyaudio_instance(self) -> Optional[pyaudio.PyAudio]:
+    def get_pyaudio_instance(self) -> pyaudio.PyAudio | None:
         """Get the PyAudio instance for direct use.
 
         Returns:

@@ -5,8 +5,8 @@ transcription data storage and management.
 """
 
 import logging
+from collections.abc import Callable
 from datetime import datetime
-from typing import Callable, Optional
 
 from .transcription_data import AudioChunk, TranscriptionResult
 
@@ -32,8 +32,8 @@ class TranscriptionModel:
         self._current_transcription: str = ""
 
         # Callbacks for state change notifications
-        self._transcription_callback: Optional[Callable[[str], None]] = None
-        self._chunk_processed_callback: Optional[Callable[[TranscriptionResult], None]] = None
+        self._transcription_callback: Callable[[str], None] | None = None
+        self._chunk_processed_callback: Callable[[TranscriptionResult], None] | None = None
 
         self.logger.info("TranscriptionModel initialized (data container only)")
 

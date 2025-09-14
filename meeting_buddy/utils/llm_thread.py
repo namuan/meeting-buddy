@@ -8,8 +8,8 @@ import logging
 import queue
 import threading
 import time
+from collections.abc import Callable
 from datetime import datetime
-from typing import Callable, Optional
 
 from ..models.llm_api_service import LLMApiService
 from ..models.llm_model import LLMRequest, LLMResponse
@@ -75,11 +75,11 @@ class LLMThread(threading.Thread):
         self._current_response = ""
 
         # Callbacks
-        self._response_callback: Optional[Callable[[LLMResponse], None]] = None
-        self._response_chunk_callback: Optional[Callable[[str], None]] = None
-        self._error_callback: Optional[Callable[[Exception], None]] = None
-        self._progress_callback: Optional[Callable[[str], None]] = None
-        self._connection_status_callback: Optional[Callable[[bool], None]] = None
+        self._response_callback: Callable[[LLMResponse], None] | None = None
+        self._response_chunk_callback: Callable[[str], None] | None = None
+        self._error_callback: Callable[[Exception], None] | None = None
+        self._progress_callback: Callable[[str], None] | None = None
+        self._connection_status_callback: Callable[[bool], None] | None = None
 
         # Check initial connection
         self.api_service.check_connection()

@@ -8,7 +8,6 @@ import json
 import logging
 from collections.abc import Iterator
 from datetime import datetime
-from typing import Optional
 
 import requests
 
@@ -50,7 +49,7 @@ class LLMApiService:
 
         # Connection state
         self._is_connected = False
-        self._last_connection_check: Optional[datetime] = None
+        self._last_connection_check: datetime | None = None
 
         self.logger.info(f"LLMApiService initialized: endpoint={endpoint}, model={model}")
 
@@ -136,7 +135,7 @@ class LLMApiService:
         return self._is_connected
 
     @property
-    def last_connection_check(self) -> Optional[datetime]:
+    def last_connection_check(self) -> datetime | None:
         """Get timestamp of last connection check."""
         return self._last_connection_check
 
@@ -341,11 +340,11 @@ class LLMApiService:
 
     def update_configuration(
         self,
-        endpoint: Optional[str] = None,
-        model: Optional[str] = None,
-        api_timeout: Optional[float] = None,
-        max_retries: Optional[int] = None,
-        retry_delay: Optional[float] = None,
+        endpoint: str | None = None,
+        model: str | None = None,
+        api_timeout: float | None = None,
+        max_retries: int | None = None,
+        retry_delay: float | None = None,
     ) -> None:
         """Update service configuration.
 

@@ -5,8 +5,8 @@ LLM API communication with Ollama for processing transcription data.
 """
 
 import logging
+from collections.abc import Callable
 from datetime import datetime
-from typing import Callable, Optional
 
 
 class LLMRequest:
@@ -42,7 +42,7 @@ class LLMRequest:
 class LLMResponse:
     """Data class representing an LLM response."""
 
-    def __init__(self, text: str, timestamp: datetime, request_id: Optional[str] = None, is_complete: bool = True):
+    def __init__(self, text: str, timestamp: datetime, request_id: str | None = None, is_complete: bool = True):
         self.text = text
         self.timestamp = timestamp
         self.request_id = request_id
@@ -82,10 +82,10 @@ class LLMModel:
         self._user_prompt: str = ""
 
         # Callbacks for state change notifications
-        self._response_callback: Optional[Callable[[str], None]] = None
-        self._response_chunk_callback: Optional[Callable[[str], None]] = None
-        self._error_callback: Optional[Callable[[str], None]] = None
-        self._connection_status_callback: Optional[Callable[[bool], None]] = None
+        self._response_callback: Callable[[str], None] | None = None
+        self._response_chunk_callback: Callable[[str], None] | None = None
+        self._error_callback: Callable[[str], None] | None = None
+        self._connection_status_callback: Callable[[bool], None] | None = None
 
         self.logger.info("LLMModel initialized (data container only)")
 

@@ -5,7 +5,6 @@ and AudioTranscriberThread to avoid duplication.
 """
 
 from datetime import datetime
-from typing import Optional
 
 import numpy as np
 
@@ -40,7 +39,7 @@ class AudioChunk:
 class TranscriptionResult:
     """Data class representing a transcription result."""
 
-    def __init__(self, text: str, confidence: float, timestamp: datetime, chunk_id: Optional[str] = None):
+    def __init__(self, text: str, confidence: float, timestamp: datetime, chunk_id: str | None = None):
         self.text = text
         self.confidence = confidence
         self.timestamp = timestamp
