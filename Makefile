@@ -1,45 +1,63 @@
 export PROJECTNAME=$(shell basename "$(PWD)")
 
-.PHONY: install
+.PHONY: $(shell grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk -F: '{print $$1}')
+
 install: ## Install the virtual environment and install the pre-commit hooks
 	@echo "🚀 Creating virtual environment using uv"
 	@uv sync
 	@uv run pre-commit install
 
-.PHONY: check
+start-work: ## Start working on a new feature
+	@echo "🚀 Starting work on a new feature"
+	@mob start -i -b "$(FEATURE)"
+
 check: ## Run code quality tools.
 	@echo "🚀 Checking lock file consistency with 'pyproject.toml'"
 	@uv lock --locked
 	@echo "🚀 Linting code: Running pre-commit"
 	@uv run pre-commit run -a
-	@echo "🚀 Mob next to commit any changes"
 	@mob next
 
-.PHONY: run
+upgrade: ## Upgrade all dependencies to their latest versions
+	@echo "🚀 Upgrading all dependencies"
+	@uv lock --upgrade
+
+test: ## Run all unit tests
+	@echo "🚀 Running unit tests"
+	@uv run pytest -v
+
+test-single: ## Run a single test file (usage: make test-single TEST=test_config.py)
+	@echo "🚀 Running single test: $(TEST)"
+	@uv run pytest -v tests/$(TEST)
+
 run: ## Run the application
-	@echo "🚀 Testing code: Running"
-	@uv run meeting-buddy
+	@echo "🚀 Testing code: Running $(PROJECTNAME)"
+	@uv run $(PROJECTNAME)
 
-.PHONY: build
-build: clean-build ## Build wheel file
-	@echo "🚀 Creating wheel file"
-	@uvx --from build pyproject-build --installer uv
-
-.PHONY: clean-build
-clean-build: ## Clean build artifacts
+clean: ## Clean build artifacts
 	@echo "🚀 Removing build artifacts"
-	@uv run python -c "import shutil; import os; shutil.rmtree('dist') if os.path.exists('dist') else None"
+	@find . -type f -name "*.pyc" -delete
+	@find . -type d -name "__pycache__" -delete
+	@find . -type d -name "*.egg-info" -delete
+	@rm -rf build/ dist/
 
-ICON_PNG ?= assets/mb-logo.png
+context: clean-build ## Build context file from application sources
+	llm-context-builder.py --extensions .py --ignored_dirs build dist generated venv .venv .idea .aider.tags.cache.v3 --print_contents --temp_file
 
-icons: ## Generate ICNS and ICO files from the PNG logo
-	@bash assets/generate-icons.sh $(ICON_PNG)
-
-package: clean-build ## Run installer
-	uv run pyinstaller main.spec
+package: clean ## Run installer
+	@uv run pyinstaller main.spec --clean
 
 install-macosx: package ## Installs application in users Application folder
 	./scripts/install-macosx.sh MeetingBuddy.app
+
+setup: ## One command setup
+	@make install-macosx
+	@echo "Installation completed"
+
+ICON_PNG ?= assets/$(PROJECTNAME)-icon.png
+
+icons: ## Generate ICNS and ICO files from the PNG logo
+	@bash assets/generate-icons.sh $(ICON_PNG)
 
 .PHONY: help
 help:

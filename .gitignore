@@ -15,6 +15,7 @@ __pycache__/
 !pyproject.toml
 !uv.lock
 !Makefile
+!install.command
 !.pre-commit-config.yaml
 !.editorconfig
 !LICENSE
